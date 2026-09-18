@@ -9,7 +9,7 @@ import ru.conceptgraph.shared.ConceptEntity;
 import java.io.File;
 import java.util.List;
 
-public class Main {
+public class MainApplication {
     public static void main(String[] args) {
         System.out.println("    тестируем лингвис движок    ");
 
@@ -17,7 +17,11 @@ public class Main {
 
         // заглушка для ромки
         FileParser temporaryParser = file ->
-                "ромка лох ромка лох ромка лох ромка лох ромка лох ромка лох ромка лох ";
+                "ромка лох  ромка лох  ромка лох  ромка лох  " +
+                        "ромка лох ромка лох ромка лох ромка лох  " +
+                        "ромка лох ромка лох ромка лох ромка лох ромка лох" +
+                        "ромка лох ромка лох ромка лох ромка лох ромка лох ромка лох" +
+                        "ромка лох ромка лох ромка лох ромка лох ромка лох ромка лох ромка лох";
 
         //сканер
         FolderScanner scanner = new FolderScanner(temporaryParser);

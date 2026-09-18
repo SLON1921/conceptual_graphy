@@ -4,20 +4,19 @@ import ru.conceptgraph.shared.Document;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class FolderScanner {
 
     private final FileParser fileParser;
-    private long idCounter = 1;
+    // безопасный айди для фронта
+    private final AtomicLong idCounter = new AtomicLong(1);
 
-    // теперь сканер требует на вход любой парсер, умеющий читать текст
     public FolderScanner(FileParser fileParser) {
         this.fileParser = fileParser;
     }
 
-
-//      рекурсивный метод для обхода папки и создания объектов Document
-
+//рекурсия для обхода паппки и создания объектов
     public List<Document> scanAndParse(File rootDir) {
         List<Document> documents = new ArrayList<>();
 
@@ -30,19 +29,29 @@ public class FolderScanner {
         if (filesAndDirs != null) {
             for (File item : filesAndDirs) {
                 if (item.isDirectory()) {
-                    // Рекурсивный прыжок во вложенную папку
+                    // рекурсия импорт во вложенную папку
                     documents.addAll(scanAndParse(item));
                 } else {
-                    // Проверяем расширения файлов строго по ТЗ
+                    // проверка разширения по тз
                     String name = item.getName().toLowerCase();
+
+                    // игнорируем скрытые файлы и временные файлы документов
+                    if (item.isHidden() || name.startsWith("~$") || name.startsWith(".")) {
+                        continue;
+                    }
+
                     if (name.endsWith(".pdf") || name.endsWith(".docx") ||
                             name.endsWith(".html") || name.endsWith(".rtf") || name.endsWith(".txt")) {
 
-                        // Вызываем метод интерфейса (будущую магию Ромы)
+                        // вызываем метод интерфейса
                         String text = fileParser.extractText(item);
 
-                        // Упаковываем данные в созданный тобой Record Document
-                        Document doc = new Document(idCounter++, item.getName(), item.getAbsolutePath(), text);
+                        Document doc = new Document(
+                                idCounter.getAndIncrement(),
+                                item.getName(),
+                                item.getAbsolutePath(),
+                                text
+                        );
                         documents.add(doc);
                     }
                 }

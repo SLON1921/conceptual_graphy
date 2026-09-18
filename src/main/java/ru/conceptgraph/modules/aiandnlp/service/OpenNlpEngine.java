@@ -16,23 +16,20 @@ public class OpenNlpEngine {
     private POSTaggerME posTagger;
 
     public OpenNlpEngine() {
-        try {
-//             загружаем встроенную русскую модель из скачанной Maven-зависимости
-            InputStream modelStream = getClass().getResourceAsStream("/opennlp-models/ru-pos.bin");
+        // Загружаем файл модели напрямую по пути на диске
+        java.io.File modelFile = new java.io.File("src/main/java/ru/conceptgraph/modules/aiandnlp/service/ru-pos.bin");
 
-//             если встроенная модель не найдется, попробуем загрузить стандартную базовую
-            if (modelStream == null) {
-                modelStream = POSModel.class.getResourceAsStream("/opennlp-models/ru-pos.bin");
-            }
-
-            if (modelStream != null) {
-                POSModel model = new POSModel(modelStream);
-                this.posTagger = new POSTaggerME(model);
-            }
+        try (InputStream modelStream = new java.io.FileInputStream(modelFile)) {
+            POSModel model = new POSModel(modelStream);
+            this.posTagger = new POSTaggerME(model);
+            System.out.println("я считаю это успех: лингвистическая модель загрузилась в ваш диск");
+        } catch (java.io.FileNotFoundException e) {
+            System.err.println("ошибка: файл модели ru-pos.bin физически не найден по пути: " + modelFile.getAbsolutePath());
         } catch (Exception e) {
-            System.err.println("ошибка: Не удалось загрузить POS-модель OpenNLP: " + e.getMessage());
+            System.err.println("ошибка: не удалось инициализировать POS-модель OpenNLP: " + e.getMessage());
         }
     }
+
 
 //
 //    метод принимает текст документа, разбивает, находит существительные и вычисляет их  позиции (пункт 2.2).
