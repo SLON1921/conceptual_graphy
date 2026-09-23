@@ -1,4 +1,4 @@
-package ru.conceptgraph.modules.aiandnlp;
+package ru.conceptgraph.modules.aiandnlp.service;
 
 import java.io.File;
 
