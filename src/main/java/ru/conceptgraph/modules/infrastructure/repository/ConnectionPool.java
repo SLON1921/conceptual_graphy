@@ -2,6 +2,7 @@ package ru.conceptgraph.modules.infrastructure.repository;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.flywaydb.core.Flyway;
 
 import java.io.InputStream;
 import java.util.Properties;
@@ -11,11 +12,12 @@ import java.io.IOException;
 
 /**
  * Компонент инфраструктурного слоя для управления пулом соединений с БД PostgreSQL.
- * Реализует высокопроизводительное управление подключениями с помощью библиотеки HikariCP.
+ * Реализует высокопроизводительное управление подключениями с помощью библиотеки HikariCP
+ * и автоматически управляет миграциями схемы базы данных через Flyway.
  *
  * <p>Класс автоматически инициализирует пул при первом обращении в статическом блоке,
- * считывая параметры конфигурации из файла {@code application.properties}, и предоставляет
- * потокобезопасный доступ к потокам соединений для репозиториев приложения.</p>
+ * считывая параметры конфигурации из файла {@code application.properties}, и выполняет проверку
+ * и обновление таблиц БД через Flyway, и предоставляет потокобезопасный доступ к соединениям.</p>
  *
  * <p><b>Примененные оптимизации кэширования для PostgreSQL:</b></p>
  * <ul>
@@ -25,7 +27,7 @@ import java.io.IOException;
  * </ul>
  *
  * @author Рома (Разработчик Б — Инфраструктура и БД)
- * @version 1.0
+ * @version 1.1
  * @since Этап 1
  */
 public class ConnectionPool {
@@ -69,6 +71,15 @@ public class ConnectionPool {
 
             dataSource = new HikariDataSource(config);
             System.out.println("[HikariCP] Пул соединений с PostgreSQL успешно запущен.");
+
+            System.out.println("[Flyway] Проверка и применение миграций базы данных...");
+            Flyway flyway = Flyway.configure()
+                    .dataSource(dataSource)
+                    .locations("classpath:db/migration")
+                    .baselineOnMigrate(true)
+                    .load();
+            flyway.migrate();
+            System.out.println("[Flyway] Миграции успешно применены. База данных актуальна.");
 
         } catch (IOException e) {
             throw new ExceptionInInitializerError("Не удалось прочесть файл свойств БД: " + e.getMessage());
