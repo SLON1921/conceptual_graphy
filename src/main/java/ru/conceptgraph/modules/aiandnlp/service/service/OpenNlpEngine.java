@@ -1,4 +1,4 @@
-package ru.conceptgraph.modules.aiandnlp.service;
+package ru.conceptgraph.modules.aiandnlp.service.service;
 
 import opennlp.tools.postag.POSModel;
 import opennlp.tools.postag.POSTaggerME;
