@@ -16,19 +16,19 @@ public class OpenNlpEngine {
     private POSTaggerME posTagger;
 
     public OpenNlpEngine() {
-        // Загружаем файл модели напрямую по пути на диске
-        java.io.File modelFile = new java.io.File("src/main/java/ru/conceptgraph/modules/aiandnlp/service/ru-pos.bin");
-
-        try (InputStream modelStream = new java.io.FileInputStream(modelFile)) {
+        // Загрузка модели через стандартный механизм ресурсов Maven
+        try (InputStream modelStream = getClass().getResourceAsStream("/opennlp-models/ru-pos.bin")) {
+            if (modelStream == null) {
+                throw new java.io.FileNotFoundException("Файл ru-pos.bin не найден в resources/opennlp-models/");
+            }
             POSModel model = new POSModel(modelStream);
             this.posTagger = new POSTaggerME(model);
-            System.out.println("я считаю это успех: лингвистическая модель загрузилась в ваш диск");
-        } catch (java.io.FileNotFoundException e) {
-            System.err.println("ошибка: файл модели ru-pos.bin физически не найден по пути: " + modelFile.getAbsolutePath());
+            System.out.println("[Успех]: Лингвистическая модель ru-pos.bin успешно загружена из ресурсов");
         } catch (Exception e) {
-            System.err.println("ошибка: не удалось инициализировать POS-модель OpenNLP: " + e.getMessage());
+            System.err.println("[ ошибка NLP]: Не удалось инициализировать модель: " + e.getMessage());
         }
     }
+
 
 
 //

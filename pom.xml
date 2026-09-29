@@ -16,12 +16,56 @@
             <version>2.3.3</version>
         </dependency>
 
+        <!-- Клиент для работы с локальной Ollama -->
+        <dependency>
+            <groupId>io.github.ollama4j</groupId>
+            <artifactId>ollama4j</artifactId>
+            <version>1.1.7</version>
+        </dependency>
+
+        <!-- Flyway: автоматическое создание и обновление таблиц БД при старте -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <version>10.10.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <version>10.10.0</version>
+        </dependency>
+
+
+        <!-- Логгер для стабильной работы Ollama4j -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-jdk14</artifactId>
+            <version>2.0.9</version>
+        </dependency>
+
+
+
         <!-- официальная готовая пос-модель для русского языка (ищет части речи) -->
         <dependency>
             <groupId>org.apache.opennlp</groupId>
             <artifactId>opennlp-models-pos-ru</artifactId>
             <version>1.3.0</version>
         </dependency>
+        <!-- Основное ядро LangChain4j -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>0.33.0</version>
+        </dependency>
+
+
+        <!-- Библиотека для удобной сборки JSON-ответов от ИИ -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.11.0</version>
+        </dependency>
+
 
         <!-- Официальный JDBC-драйвер для подключения Java к PostgreSQL -->
         <dependency>
