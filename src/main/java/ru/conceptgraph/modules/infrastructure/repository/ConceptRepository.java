@@ -1,6 +1,7 @@
 package ru.conceptgraph.modules.infrastructure.repository;
 
 import java.sql.*;
+
 import ru.conceptgraph.shared.EntityType;
 import ru.conceptgraph.shared.Edge;
 import java.util.List;
