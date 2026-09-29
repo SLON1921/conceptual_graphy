@@ -1,0 +1,259 @@
+{
+  "document_metadata": {
+    "source_file": "test.txt",
+    "processed_at": "2026-09-21T10:00:00Z",
+    "status": "success"
+  },
+
+  "extracted_entities": {
+    "people": [
+      {
+        "canonical_name": "Михаил Ломоносов",
+        "aliases": ["Михаил Ломоносов", "М. Ломоносов"],
+        "mentions": [
+          { "position": 15, "context": "Авторы: Михаил Ломоносов" },
+          { "position": 890, "context": "профессор М. Ломоносов" }
+        ],
+        "wiki_checked": true,
+        "wiki_description": "Русский учёный-энциклопедист, химик, физик, астроном.",
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Дмитрий Менделеев",
+        "aliases": ["Дмитрий Менделеев"],
+        "mentions": [
+          { "position": 35, "context": "Авторы: Дмитрий Менделеев" }
+        ],
+        "wiki_checked": true,
+        "wiki_description": "Русский учёный-энциклопедист, химик, физик, метролог.",
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Елена Ковалева",
+        "aliases": ["Елена Ковалева"],
+        "mentions": [
+          { "position": 55, "context": "Авторы: Елена Ковалева" }
+        ],
+        "wiki_checked": false,
+        "wiki_description": null,
+        "verification_status": "unverified"
+      },
+      {
+        "canonical_name": "Иван Петров",
+        "aliases": ["Иван Петров"],
+        "mentions": [
+          { "position": 1200, "context": "Иван Петров разработал архитектуру" },
+          { "position": 1250, "context": "Иван Петров также отвечал за тестирование" }
+        ],
+        "wiki_checked": false,
+        "wiki_description": null,
+        "verification_status": "unverified"
+      }
+    ],
+
+    "technologies_and_abbreviations": [
+      {
+        "canonical_name": "Градиентный спуск",
+        "aliases": ["градиентного спуска", "градиентного спуск", "gradient descent"],
+        "type": "technology",
+        "mentions": [
+          { "position": 150, "context": "применение алгоритмов градиентного спуска" },
+          { "position": 700, "context": "Метод градиентного спуск (gradient descent)" }
+        ],
+        "wiki_checked": true,
+        "wiki_description": "Метод оптимизации для нахождения минимума функции.",
+        "verification_status": "trusted",
+        "subject_index_match": true
+      },
+      {
+        "canonical_name": "TensorFlow",
+        "aliases": ["TensorFlow"],
+        "type": "technology",
+        "mentions": [{ "position": 200, "context": "фреймворк TensorFlow" }],
+        "wiki_checked": true,
+        "wiki_description": "Открытая библиотека машинного обучения.",
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Python",
+        "aliases": ["Python"],
+        "type": "programming_language",
+        "mentions": [{ "position": 230, "context": "язык программирования Python" }],
+        "wiki_checked": true,
+        "wiki_description": "Высокоуровневый язык программирования общего назначения.",
+        "verification_status": "trusted",
+        "subject_index_match": true
+      },
+      {
+        "canonical_name": "Java",
+        "aliases": ["Java"],
+        "type": "programming_language",
+        "mentions": [{ "position": 420, "context": "технологии Java" }],
+        "wiki_checked": true,
+        "wiki_description": "Объектно-ориентированный язык программирования.",
+        "verification_status": "trusted",
+        "subject_index_match": true
+      },
+      {
+        "canonical_name": "Рефакторинг",
+        "aliases": ["рефакторинга", "Рефакторинг"],
+        "type": "technology",
+        "mentions": [{ "position": 400, "context": "методы рефакторинга кода" }],
+        "wiki_checked": true,
+        "wiki_description": "Процесс изменения внутренней структуры программы.",
+        "verification_status": "trusted",
+        "subject_index_match": true
+      }
+    ],
+
+    "organizations_and_services": [
+      {
+        "canonical_name": "СПбГУ",
+        "aliases": ["Санкт-Петербургский Государственный Университет", "СПбГУ"],
+        "type": "organization",
+        "mentions": [{ "position": 80, "context": "Санкт-Петербургский Государственный Университет (СПбГУ)" }],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Google Research",
+        "aliases": ["Google Research"],
+        "type": "organization",
+        "mentions": [{ "position": 110, "context": "Google Research" }],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Яндекс",
+        "aliases": ["Яндекс"],
+        "type": "service",
+        "mentions": [{ "position": 750, "context": "Компания Яндекс предоставила данные" }],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "ВОЗ",
+        "aliases": ["ВОЗ"],
+        "type": "organization",
+        "mentions": [{ "position": 820, "context": "организации ВОЗ" }],
+        "wiki_checked": true,
+        "wiki_description": "Всемирная организация здравоохранения.",
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Amazon",
+        "aliases": ["Amazon"],
+        "type": "service",
+        "mentions": [{ "position": 450, "context": "сервисы Amazon" }],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Git",
+        "aliases": ["Git"],
+        "type": "technology",
+        "mentions": [{ "position": 470, "context": "сервисы Amazon и Git" }],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      }
+    ],
+
+    "geography_and_events": [
+      {
+        "canonical_name": "Орел (город)",
+        "aliases": ["город Орел", "Орел (город)"],
+        "type": "city",
+        "mentions": [
+          { "position": 300, "context": "городе Орел (Орловская область)" },
+          { "position": 1500, "context": "Орел (город) .......... стр. 9" }
+        ],
+        "wiki_checked": true,
+        "wiki_description": "Город в России, административный центр Орловской области.",
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Орел (река)",
+        "aliases": ["река Орел", "Орел (река)"],
+        "type": "river",
+        "mentions": [
+          { "position": 350, "context": "упоминается река Орел" },
+          { "position": 1480, "context": "Орел (река) ........... стр. 8" }
+        ],
+        "wiki_checked": true,
+        "wiki_description": "Река в Орловской области, приток Оки.",
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Первая мировая война",
+        "aliases": ["Первой мировой войны", "Первая мировая война"],
+        "type": "historical_event",
+        "mentions": [
+          { "position": 500, "context": "периоду Первой мировой войны" },
+          { "position": 1490, "context": "Первая мировая война ... стр. 30" }
+        ],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      },
+      {
+        "canonical_name": "Зеленоград",
+        "aliases": ["Зеленоград"],
+        "type": "city",
+        "mentions": [{ "position": 530, "context": "истории города Зеленоград" }],
+        "wiki_checked": true,
+        "verification_status": "trusted"
+      }
+    ]
+  },
+
+  "subject_index_processing": {
+    "status": "processed_separately",
+    "entries": [
+      { "term": "Градиентный спуск", "page": 5 },
+      { "term": "Нейронные сети", "page": 12 },
+      { "term": "Python", "page": 3 },
+      { "term": "Java", "page": 4 },
+      { "term": "Рефакторинг", "page": 20 },
+      { "term": "Первая мировая война", "page": 30 },
+      { "term": "Орел (река)", "page": 8 },
+      { "term": "Орел (город)", "page": 9 }
+    ],
+    "note": "Термины из указателя сопоставлены с сущностями в основном тексте и помечены как 'subject_index_match: true'."
+  },
+
+  "bibliography_processing": {
+    "status": "processed_separately",
+    "entries": [
+      { "id": 1, "authors": ["Ломоносов М.В."], "title": "Основы алгоритмов", "year": 2020 },
+      { "id": 2, "authors": ["Менделеев Д.И."], "title": "Химия и жизнь", "year": 2019 },
+      { "id": 3, "title": "Статья про Java и Python в веб-разработке", "journal": "Код", "year": 2021 },
+      { "id": 4, "title": "Исследование реки Орел", "journal": "Географический вестник", "year": 2018 }
+    ],
+    "note": "Сущности из списка литературы (Ломоносов, Менделеев, Java, Python, Орел) обработаны отдельно и не смешаны с основным текстом."
+  },
+
+  "knowledge_graph": {
+    "nodes": [
+      { "id": "gradient_descent", "label": "Градиентный спуск", "type": "technology" },
+      { "id": "tensorflow", "label": "TensorFlow", "type": "technology" },
+      { "id": "python", "label": "Python", "type": "programming_language" },
+      { "id": "java", "label": "Java", "type": "programming_language" },
+      { "id": "lomonosov", "label": "Михаил Ломоносов", "type": "person" },
+      { "id": "mendeleev", "label": "Дмитрий Менделеев", "type": "person" },
+      { "id": "spbgu", "label": "СПбГУ", "type": "organization" },
+      { "id": "google_research", "label": "Google Research", "type": "organization" }
+    ],
+    "edges": [
+      { "source": "lomonosov", "target": "gradient_descent", "weight": 0.9, "type": "authored_about" },
+      { "source": "mendeleev", "target": "spbgu", "weight": 0.8, "type": "affiliated_with" },
+      { "source": "gradient_descent", "target": "tensorflow", "weight": 0.85, "type": "implemented_with" },
+      { "source": "tensorflow", "target": "python", "weight": 0.95, "type": "uses_language" },
+      { "source": "java", "target": "refactoring", "weight": 0.7, "type": "related_to" }
+    ]
+  },
+
+  "unresolved_entities": {
+    "count": 4,
+    "items": ["Елена Ковалева", "Иван Петров", "Зеленоград", "Орловская область"],
+    "note": "Сущности, для которых не удалось однозначно подобрать описание в Википедии или которые требуют ручной проверки."
+  }
+}
