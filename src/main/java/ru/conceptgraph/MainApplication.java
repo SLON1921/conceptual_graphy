@@ -1,9 +1,9 @@
 package ru.conceptgraph;
 
-import ru.conceptgraph.modules.aiandnlp.service.service.FileParser;
-import ru.conceptgraph.modules.aiandnlp.service.service.FolderScanner;
-import ru.conceptgraph.modules.aiandnlp.service.service.OpenNlpEngine;
-import ru.conceptgraph.modules.aiandnlp.service.service.AiGraphEngine;
+import ru.conceptgraph.modules.aiandnlp.service.FileParser;
+import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
+import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
+import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
 import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
