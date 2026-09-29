@@ -1,4 +1,4 @@
-package ru.conceptgraph.modules.aiandnlp.service;
+package ru.conceptgraph.modules.aiandnlp.service.service;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;

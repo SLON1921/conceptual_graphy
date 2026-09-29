@@ -35,6 +35,17 @@
             <version>10.10.0</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>2.9.2</version>
+        </dependency>
+        <!-- Парсеры для всех популярных форматов (PDF, DOCX, HTML, RTF) -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers-standard-package</artifactId>
+            <version>2.9.2</version>
+        </dependency>
 
         <!-- Логгер для стабильной работы Ollama4j -->
         <dependency>
