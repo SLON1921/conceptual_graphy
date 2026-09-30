@@ -249,7 +249,8 @@ public class MainWindow extends Application {
                     OpenNlpEngine nlpEngine = new OpenNlpEngine();
                     AiGraphEngine aiEngine = new AiGraphEngine();
 
-                    String rawText = tikaParser.extractText(selectedFileFromTree);
+                    String rawText = tikaParser.parseFile(selectedFileFromTree.toPath());
+
 
                     javafx.application.Platform.runLater(() -> {
                         logArea.appendText("[1/3] Извлечение контента через Apache Tika выполнено.\n");

@@ -4,10 +4,10 @@ import ru.conceptgraph.modules.aiandnlp.service.FileParser;
 import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
 import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
+import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
-import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 
 import java.io.File;
 import java.util.List;
