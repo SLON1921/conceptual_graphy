@@ -15,7 +15,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-public class TikaParserEngine {
+public class TikaParserEngine implements ru.conceptgraph.modules.aiandnlp.service.FileParser {
+    @Override
+    public String extractText(java.io.File file) {
+        try {
+            return parseFile(file.toPath());
+        } catch (Exception e) {
+            System.err.println("[Tika Ошибка] Не удалось прочитать файл: " + e.getMessage());
+            return "";
+        }
+    }
+
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "docx", "html", "rtf", "txt");
 
     public List<Document> parseDirectory(String rootDirPath) throws IOException {

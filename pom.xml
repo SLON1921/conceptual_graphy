@@ -91,6 +91,28 @@
             <artifactId>HikariCP</artifactId>
             <version>5.1.0</version>
         </dependency>
+
+        <!-- Ядро JavaFX для работы с кнопками и текстом -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>21.0.2</version>
+        </dependency>
+
+        <!-- Графический движок для отрисовки сцен и окон -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>21.0.2</version>
+        </dependency>
+
+        <!-- Базовые структуры данных JavaFX -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-base</artifactId>
+            <version>21.0.2</version>
+        </dependency>
+
     </dependencies>
 
     <properties>
