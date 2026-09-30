@@ -7,6 +7,7 @@ import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
 import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
+import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 
 import java.io.File;
 import java.util.List;
@@ -20,15 +21,12 @@ public class MainApplication {
         OpenNlpEngine nlpEngine = new OpenNlpEngine();
         AiGraphEngine aiEngine = new AiGraphEngine();
 
-        // заглушка ромки
-        FileParser temporaryParser = file ->
-                "Жена застаёт мужа с любовницей. " +
-                        "Муж в панике кричит:— Дорогая, не верь своим глазам! " +
-                        "Верь моему сердцу, оно бьётся только для тебя! Жена отвечает:" +
-                        "Да, но твой пусицыю чувствует другая баба!";
+// Подключаем парсер ромки вместо заглушки
+        TikaParserEngine tikaParser = new TikaParserEngine();
 
-        // сканер папок
-        FolderScanner scanner = new FolderScanner(temporaryParser);
+// Передаем его в сканер папок
+        FolderScanner scanner = new FolderScanner(tikaParser);
+
 
         String testPath = "C:\\test_docs";
         File targetDir = new File(testPath);
@@ -49,9 +47,14 @@ public class MainApplication {
 
             // прогоняем слова через Ollama для чистки омонимов и дедупликации (Лаба 4)
             System.out.println("\n[Локальный ИИ]: Уточнение категорий и контекстный анализ:");
+            // 2. Прогоняем слова через Ollama для чистки омонимов и дедупликации (Лаба 4)
+            System.out.println("\n[Локальный ИИ]: Уточнение категорий и контекстный анализ:");
             for (ConceptEntity concept : rawConcepts) {
+                // Отправляем запрос в Ollama по HTTP
                 ConceptEntity resolved = aiEngine.resolveOmonymAndType(concept, doc.rawText());
-                System.out.printf("  * Узел [%s] | Тип по ТЗ: %s | Смещение: %d -> %d\n",
+
+                // Печатаем вообще все узлы, чтобы увидеть результат работы конвейера!
+                System.out.printf("  • Узел [%s] | Исправленный тип от ИИ: %s | Координаты: %d -> %d\n",
                         resolved.value(), resolved.type(), resolved.startChar(), resolved.endChar());
             }
 
