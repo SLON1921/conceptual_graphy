@@ -1,5 +1,7 @@
 package ru.conceptgraph;
 
+import java.util.ArrayList;
+
 import ru.conceptgraph.modules.aiandnlp.service.FileParser;
 import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
 import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
@@ -59,15 +61,40 @@ public class MainApplication {
             }
 
             // строим связи графа (Edges) между узлами
-            List<Edge> edges = aiEngine.buildSemanticConnections(rawConcepts, doc.rawText());
+            // 1. Сначала сохраняем все сырые концепты в БД PostgreSQL и собираем их уже с реальными ID
+            List<ConceptEntity> dbSavedConcepts = new ArrayList<>();
+            for (ConceptEntity raw : rawConcepts) {
+                try {
+                    // Вызываем Ромкин репозиторий, он возвращает сгенерированный базой Long ID
+                    Long dbId = ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveConcept(raw.value(), raw.type());
+
+                    // Создаем новый объект ConceptEntity, куда передаем этот реальный ID
+                    dbSavedConcepts.add(new ConceptEntity(dbId, raw.value(), raw.type(), raw.startChar(), raw.endChar()));
+                } catch (Exception e) {
+                    System.err.println("[DB Error] Не удалось сохранить концепт: " + raw.value() + " | " + e.getMessage());
+                }
+            }
+
+            // 2. Теперь передаем в метод список концептов с реальными ID из базы данных
+            List<Edge> edges = aiEngine.buildSemanticConnections(dbSavedConcepts, doc.rawText());
+
+            // 3. Твой логирующий вывод в консоль (сохранен полностью, выводит реальные ID)
             System.out.println("\n [ИИ]: Сформированные ребра графа (Edges):");
             for (Edge edge : edges) {
-                System.out.printf("  * Связь: Узел %d - Узел %d | Вес (Важность): %.2f\n",
+                System.out.printf(" * Связь: Узел %d - Узел %d | Вес (Важность): %.2f\n",
                         edge.sourceConceptId(), edge.targetConceptId(), edge.weight());
             }
+
+            // 4. Пакетно сохраняем сгенерированные ребра графа в базу Ромы
+            try {
+                ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveGraphEdges(edges);
+            } catch (Exception e) {
+                System.err.println("[DB Error] Не удалось сохранить ребра графа: " + e.getMessage());
+            }
+
+            System.out.println("\n                                               ");
+            System.out.println("       КОНВЕЙЕР УСПЕШНО ЗАВЕРШИЛ РАБОТУ          ");
+            System.out.println("                                                 ");
         }
-        System.out.println("\n                                               ");
-        System.out.println("       КОНВЕЙЕР УСПЕШНО ЗАВЕРШИЛ РАБОТУ          ");
-        System.out.println("                                                 ");
     }
 }
