@@ -173,8 +173,12 @@ public class MainWindow extends Application {
         mainLayout.getChildren().addAll(topBar, bodyLayout);
 
         // --- ДИНАМИЧЕСКИЙ РЕРАЙТ ХОЛСТА ПРИ РЕСАЙЗЕ ОКНА И СДВИГЕ ТЕКСТА ---
-        graphCanvas.widthProperty().addListener(o -> { if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas); });
-        graphCanvas.heightProperty().addListener(o -> { if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas); });
+        graphCanvas.widthProperty().addListener(o -> {
+            if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
+        });
+        graphCanvas.heightProperty().addListener(o -> {
+            if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
+        });
 
         weightSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             minWeightThreshold = newVal.doubleValue();
@@ -184,7 +188,7 @@ public class MainWindow extends Application {
 
         scaleSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             graphRadiusScale = newVal.doubleValue();
-            scaleLabel.setText(String.format("Масштаб круга графа (%d%%):", (int)(graphRadiusScale * 100)));
+            scaleLabel.setText(String.format("Масштаб круга графа (%d%%):", (int) (graphRadiusScale * 100)));
             if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
         });
 
@@ -266,11 +270,35 @@ public class MainWindow extends Application {
                         graphTranslateX = 0.0; // Сбрасываем сдвиги камеры на старт
                         graphTranslateY = 0.0;
 
+                        // 1. Прогоняем омонимы и СРАЗУ сохраняем в БД для получения реальных ID
                         for (ConceptEntity concept : rawConcepts) {
                             ConceptEntity resolved = aiEngine.resolveOmonymAndType(concept, rawText);
-                            currentResolvedConcepts.add(resolved);
+                            try {
+                                // Вызываем репозиторий Ромы для получения Long ID из Postgres
+                                Long dbId = ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveConcept(
+                                        resolved.value(), resolved.type()
+                                );
+                                // Сохраняем в UI-список объект с реальным ID базы
+                                currentResolvedConcepts.add(new ConceptEntity(
+                                        dbId, resolved.value(), resolved.type(), resolved.startChar(), resolved.endChar()
+                                ));
+                            } catch (Exception e) {
+                                System.err.println("[UI DB Error] Не удалось сохранить узел: " + resolved.value());
+                                // Фолбэк на случай падения базы, чтобы не сломать UI
+                                currentResolvedConcepts.add(resolved);
+                            }
                         }
-                        currentEdges.addAll(aiEngine.buildSemanticConnections(currentResolvedConcepts, rawText));
+
+                        // 2. Генерируем семантические связи без предикатов действий на основе ID из БД
+                        List<Edge> newEdges = aiEngine.buildSemanticConnections(currentResolvedConcepts, rawText);
+                        currentEdges.addAll(newEdges);
+
+                        // 3. Пакетно сохраняем рёбра графа в базу данных Ромы
+                        try {
+                            ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveGraphEdges(newEdges);
+                        } catch (Exception e) {
+                            System.err.println("[UI DB Error] Не удалось сохранить рёбра в базу: " + e.getMessage());
+                        }
                     }
 
                     javafx.application.Platform.runLater(() -> {
@@ -281,15 +309,24 @@ public class MainWindow extends Application {
                             String icon = c.type() == ru.conceptgraph.shared.EntityType.PERSON ? "👤" :
                                     c.type() == ru.conceptgraph.shared.EntityType.GEOGRAPHY ? "🌍" :
                                             c.type() == ru.conceptgraph.shared.EntityType.TECHNOLOGY ? "💻" : "📦";
-                            logArea.appendText(String.format("  %s Узел [%s] | Тип: %s (%d -> %d)\n", icon, c.value(), c.type(), c.startChar(), c.endChar()));
+                            logArea.appendText(String.format("  %s Узел [%s] (ID: %d) | Тип: %s (%d -> %d)\n",
+                                    icon, c.value(), c.id(), c.type(), c.startChar(), c.endChar()));
                         }
 
                         logArea.appendText("\n🌐 СФОРМИРОВАННЫЕ СЕМАНТИЧЕСКИЕ СВЯЗИ (EDGES):\n");
+                        // Исправлен вывод логов: ищем текстовое имя ноды по её реальному ID из базы, а не по индексам
                         for (Edge edge : currentEdges) {
-                            int srcIdx = edge.sourceConceptId().intValue() - 1;
-                            int trgIdx = edge.targetConceptId().intValue() - 1;
-                            String srcW = (srcIdx >= 0 && srcIdx < currentResolvedConcepts.size()) ? currentResolvedConcepts.get(srcIdx).value() : "Узел_" + edge.sourceConceptId();
-                            String trgW = (trgIdx >= 0 && trgIdx < currentResolvedConcepts.size()) ? currentResolvedConcepts.get(trgIdx).value() : "Узел_" + edge.targetConceptId();
+                            String srcW = "Узел_" + edge.sourceConceptId();
+                            String trgW = "Узел_" + edge.targetConceptId();
+
+                            for (ConceptEntity c : currentResolvedConcepts) {
+                                if (c.id() != null && c.id().equals(edge.sourceConceptId())) {
+                                    srcW = c.value();
+                                }
+                                if (c.id() != null && c.id().equals(edge.targetConceptId())) {
+                                    trgW = c.value();
+                                }
+                            }
                             logArea.appendText(String.format("  • Связь: [%s] 🔗 [%s] | Вес: %.2f\n", srcW, trgW, edge.weight()));
                         }
                         logArea.appendText("\n=================================================================\n");
