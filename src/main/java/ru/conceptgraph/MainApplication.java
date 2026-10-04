@@ -1,9 +1,12 @@
 package ru.conceptgraph;
 
+import java.util.ArrayList;
+
 import ru.conceptgraph.modules.aiandnlp.service.FileParser;
 import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
 import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
+import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
@@ -20,15 +23,12 @@ public class MainApplication {
         OpenNlpEngine nlpEngine = new OpenNlpEngine();
         AiGraphEngine aiEngine = new AiGraphEngine();
 
-        // заглушка ромки
-        FileParser temporaryParser = file ->
-                "Жена застаёт мужа с любовницей. " +
-                        "Муж в панике кричит:— Дорогая, не верь своим глазам! " +
-                        "Верь моему сердцу, оно бьётся только для тебя! Жена отвечает:" +
-                        "Да, но твой пусицыю чувствует другая баба!";
+// Подключаем парсер ромки вместо заглушки
+        TikaParserEngine tikaParser = new TikaParserEngine();
 
-        // сканер папок
-        FolderScanner scanner = new FolderScanner(temporaryParser);
+// Передаем его в сканер папок
+        FolderScanner scanner = new FolderScanner(tikaParser);
+
 
         String testPath = "C:\\test_docs";
         File targetDir = new File(testPath);
@@ -49,22 +49,52 @@ public class MainApplication {
 
             // прогоняем слова через Ollama для чистки омонимов и дедупликации (Лаба 4)
             System.out.println("\n[Локальный ИИ]: Уточнение категорий и контекстный анализ:");
+            // 2. Прогоняем слова через Ollama для чистки омонимов и дедупликации (Лаба 4)
+            System.out.println("\n[Локальный ИИ]: Уточнение категорий и контекстный анализ:");
             for (ConceptEntity concept : rawConcepts) {
+                // Отправляем запрос в Ollama по HTTP
                 ConceptEntity resolved = aiEngine.resolveOmonymAndType(concept, doc.rawText());
-                System.out.printf("  * Узел [%s] | Тип по ТЗ: %s | Смещение: %d -> %d\n",
+
+                // Печатаем вообще все узлы, чтобы увидеть результат работы конвейера!
+                System.out.printf("  • Узел [%s] | Исправленный тип от ИИ: %s | Координаты: %d -> %d\n",
                         resolved.value(), resolved.type(), resolved.startChar(), resolved.endChar());
             }
 
             // строим связи графа (Edges) между узлами
-            List<Edge> edges = aiEngine.buildSemanticConnections(rawConcepts, doc.rawText());
+            // 1. Сначала сохраняем все сырые концепты в БД PostgreSQL и собираем их уже с реальными ID
+            List<ConceptEntity> dbSavedConcepts = new ArrayList<>();
+            for (ConceptEntity raw : rawConcepts) {
+                try {
+                    // Вызываем Ромкин репозиторий, он возвращает сгенерированный базой Long ID
+                    Long dbId = ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveConcept(raw.value(), raw.type());
+
+                    // Создаем новый объект ConceptEntity, куда передаем этот реальный ID
+                    dbSavedConcepts.add(new ConceptEntity(dbId, raw.value(), raw.type(), raw.startChar(), raw.endChar()));
+                } catch (Exception e) {
+                    System.err.println("[DB Error] Не удалось сохранить концепт: " + raw.value() + " | " + e.getMessage());
+                }
+            }
+
+            // 2. Теперь передаем в метод список концептов с реальными ID из базы данных
+            List<Edge> edges = aiEngine.buildSemanticConnections(dbSavedConcepts, doc.rawText());
+
+            // 3. Твой логирующий вывод в консоль (сохранен полностью, выводит реальные ID)
             System.out.println("\n [ИИ]: Сформированные ребра графа (Edges):");
             for (Edge edge : edges) {
-                System.out.printf("  * Связь: Узел %d - Узел %d | Вес (Важность): %.2f\n",
+                System.out.printf(" * Связь: Узел %d - Узел %d | Вес (Важность): %.2f\n",
                         edge.sourceConceptId(), edge.targetConceptId(), edge.weight());
             }
+
+            // 4. Пакетно сохраняем сгенерированные ребра графа в базу Ромы
+            try {
+                ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveGraphEdges(edges);
+            } catch (Exception e) {
+                System.err.println("[DB Error] Не удалось сохранить ребра графа: " + e.getMessage());
+            }
+
+            System.out.println("\n                                               ");
+            System.out.println("       КОНВЕЙЕР УСПЕШНО ЗАВЕРШИЛ РАБОТУ          ");
+            System.out.println("                                                 ");
         }
-        System.out.println("\n                                               ");
-        System.out.println("       КОНВЕЙЕР УСПЕШНО ЗАВЕРШИЛ РАБОТУ          ");
-        System.out.println("                                                 ");
     }
 }
