@@ -5,6 +5,9 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.sax.BodyContentHandler;
 import ru.conceptgraph.shared.Document;
+import ru.conceptgraph.modules.aiandnlp.service.FileParser;
+import java.io.File;
+
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -15,7 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-public class TikaParserEngine {
+public class TikaParserEngine implements FileParser {
+
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "docx", "html", "rtf", "txt");
 
     public List<Document> parseDirectory(String rootDirPath) throws IOException {
@@ -83,4 +87,14 @@ public class TikaParserEngine {
         }
         return fileName.substring(lastIndexOf + 1);
     }
+    @Override
+    public String extractText(File file) {
+        try {
+            return parseFile(file.toPath());
+        } catch (Exception e) {
+            System.err.printf("[ОШИБКА] Ошибка извлечения текста из %s: %s%n", file.getName(), e.getMessage());
+            return "";
+        }
+    }
+
 }
