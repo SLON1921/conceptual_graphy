@@ -2,7 +2,7 @@ package ru.conceptgraph;
 
 import java.util.ArrayList;
 
-import ru.conceptgraph.modules.aiandnlp.service.FileParser;
+import ru.conceptgraph.core.errors.AppExceptionHandler;
 import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
 import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
@@ -16,6 +16,10 @@ import java.util.List;
 
 public class MainApplication {
     public static void main(String[] args) {
+        // Кастомный перехватчик(если не обернуть в try-catch, то ошибка передастся сюда)
+        Thread.setDefaultUncaughtExceptionHandler(new AppExceptionHandler());
+        AppExceptionHandler exceptionHandler = new AppExceptionHandler();
+
         System.out.println("   КОНСОЛЬНЫЙ ЯДРОВОЙ КОНВЕЙЕР CONCEPTER-GRAPH   ");
         System.out.println("                                                    ");
 
@@ -52,12 +56,17 @@ public class MainApplication {
             // 2. Прогоняем слова через Ollama для чистки омонимов и дедупликации (Лаба 4)
             System.out.println("\n[Локальный ИИ]: Уточнение категорий и контекстный анализ:");
             for (ConceptEntity concept : rawConcepts) {
-                // Отправляем запрос в Ollama по HTTP
-                ConceptEntity resolved = aiEngine.resolveOmonymAndType(concept, doc.rawText());
+                try {
+                    // Отправляем запрос в Ollama по HTTP
+                    ConceptEntity resolved = aiEngine.resolveOmonymAndType(concept, doc.rawText());
 
-                // Печатаем вообще все узлы, чтобы увидеть результат работы конвейера!
-                System.out.printf("  • Узел [%s] | Исправленный тип от ИИ: %s | Координаты: %d -> %d\n",
-                        resolved.value(), resolved.type(), resolved.startChar(), resolved.endChar());
+                    // Печатаем вообще все узлы, чтобы увидеть результат работы конвейера!
+                    System.out.printf("  • Узел [%s] | Исправленный тип от ИИ: %s | Координаты: %d -> %d\n",
+                            resolved.value(), resolved.type(), resolved.startChar(), resolved.endChar());
+                } catch (Exception e) {
+                    //Обработка ошибки на случай если Ollama что сделает?
+                    exceptionHandler.CatchTheFailure(concept.value(), e);
+                }
             }
 
             // строим связи графа (Edges) между узлами
