@@ -35,8 +35,8 @@ public class AppConfig {
     /**
      * @return Имя пользователя для авторизации в базе данных PostgreSQL
      */
-    public static String getDbUser() {
-        return properties.getProperty("db.user");
+    public static String getDbUsername() {
+        return properties.getProperty("db.username");
     }
 
     /**
@@ -49,8 +49,8 @@ public class AppConfig {
     /**
      * @return Авторизационный токен/API-ключ для интеграции с ИИшкой
      */
-    public static String getLlmApiKey() {
-        return properties.getProperty("llm.api.key");
+    public static int getMaxPoolSize() {
+        return Integer.parseInt(properties.getProperty("db.pool.max-size").trim());
     }
 
     /**
