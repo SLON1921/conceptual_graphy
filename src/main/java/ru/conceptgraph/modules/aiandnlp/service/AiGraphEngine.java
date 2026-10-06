@@ -2,9 +2,11 @@ package ru.conceptgraph.modules.aiandnlp.service;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.jspecify.annotations.NonNull;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
 import ru.conceptgraph.shared.EntityType;
+import ru.conceptgraph.core.errors.AiException;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,7 +19,6 @@ import java.util.List;
 public class AiGraphEngine {
 
     private final HttpClient httpClient;
-    private final String modelName = "llama3";
 
     public AiGraphEngine() {
         this.httpClient = HttpClient.newBuilder()
@@ -56,6 +57,8 @@ public class AiGraphEngine {
 
         } catch (Exception e) {
             System.err.println("[Ollama Error]: " + e.getMessage());
+
+            throw new AiException("Сбой Ollama для '" + rawEntity.value() + "'", e);
         }
 
         return rawEntity;
@@ -157,21 +160,7 @@ public class AiGraphEngine {
                     continue;
                 }
 
-                String weightPart;
-
-                if (secondColon != -1) {
-                    weightPart = cleanLine
-                            .substring(firstColon + 1, secondColon)
-                            .trim();
-                } else {
-                    weightPart = cleanLine
-                            .substring(firstColon + 1)
-                            .trim();
-                }
-
-                String numericWeight = weightPart
-                        .replace(",", ".")
-                        .replaceAll("[^0-9.]", "");
+                String numericWeight = getNumericWeight(secondColon, cleanLine, firstColon);
 
                 if (numericWeight.isBlank()) {
                     continue;
@@ -250,8 +239,7 @@ public class AiGraphEngine {
                         continue;
                     }
 
-                    if (srcId != null
-                            && entity.id().equals(srcId)) {
+                    if (srcId != null && srcId.equals(entity.id())) {
                         continue;
                     }
 
@@ -315,6 +303,26 @@ public class AiGraphEngine {
 
         return edges;
     }
+
+    private static @NonNull String getNumericWeight(int secondColon, String cleanLine, int firstColon) {
+        String weightPart;
+
+        if (secondColon != -1) {
+            weightPart = cleanLine
+                    .substring(firstColon + 1, secondColon)
+                    .trim();
+        } else {
+            weightPart = cleanLine
+                    .substring(firstColon + 1)
+                    .trim();
+        }
+
+        String numericWeight = weightPart
+                .replace(",", ".")
+                .replaceAll("[^0-9.]", "");
+        return numericWeight;
+    }
+
     public String generateText(String prompt) {
         String cleanPrompt = prompt
                 .replace("\\", "\\\\")
@@ -322,6 +330,7 @@ public class AiGraphEngine {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
 
+        String modelName = "llama3";
         String jsonRequestBody = "{\"model\": \"" + modelName
                 + "\", \"prompt\": \"" + cleanPrompt
                 + "\", \"stream\": false}";
