@@ -26,6 +26,7 @@ public class AppExceptionHandler implements Thread.UncaughtExceptionHandler{
     private void logFailureToDB(String word, String error) {
         String sql = "INSERT INTO entity_failures (word, error_message) VALUES (?, ?)";
 
+
         try (Connection conn = ConnectionPool.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, truncate(word, 255));

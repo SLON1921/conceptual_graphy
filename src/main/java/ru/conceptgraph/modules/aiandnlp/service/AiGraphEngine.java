@@ -17,7 +17,6 @@ import java.util.List;
 public class AiGraphEngine {
 
     private final HttpClient httpClient;
-    private final String modelName = "llama3";
 
     public AiGraphEngine() {
         this.httpClient = HttpClient.newBuilder()
@@ -252,8 +251,7 @@ public class AiGraphEngine {
                         continue;
                     }
 
-                    if (srcId != null
-                            && entity.id().equals(srcId)) {
+                    if (srcId != null && srcId.equals(entity.id())) {
                         continue;
                     }
 
@@ -324,6 +322,7 @@ public class AiGraphEngine {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
 
+        String modelName = "llama3";
         String jsonRequestBody = "{\"model\": \"" + modelName
                 + "\", \"prompt\": \"" + cleanPrompt
                 + "\", \"stream\": false}";
