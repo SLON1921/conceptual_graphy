@@ -56,6 +56,8 @@ public class AiGraphEngine {
 
         } catch (Exception e) {
             System.err.println("[Ollama Error]: " + e.getMessage());
+
+            throw new RuntimeException("Сбой локальной Ollama при разрешении омонимии для '" + rawEntity.value() + "'", e);
         }
 
         return rawEntity;
