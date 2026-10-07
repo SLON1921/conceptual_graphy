@@ -76,9 +76,9 @@ public class AppConfig {
 
             // ПРОВЕРКА НА ПУСТОТУ
             validateProperty("db.url");
-            validateProperty("db.user");
+            validateProperty("db.username");
             validateProperty("db.password");
-            validateProperty("llm.api.key");
+            validateProperty("db.pool.max-size");
 
             System.out.println("[CONFIG] Конфигурация успешно загружена. Все обязательные ключи на месте.");
 
