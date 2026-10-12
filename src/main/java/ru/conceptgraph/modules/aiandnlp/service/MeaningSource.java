@@ -12,4 +12,9 @@ public interface MeaningSource {
      * @return варианты в порядке популярности; пустой список, если вариантов нет или источник недоступен
      */
     List<HomonymResolver.Meaning> findMeanings(String word);
+
+    /** Число ссылок в статье (для wiki_cache); 0, если источник этого не умеет */
+    default int countLinks(String title) {
+        return 0;
+    }
 }

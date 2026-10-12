@@ -68,6 +68,7 @@ public class ConceptGraphPipeline {
         final List<Mention> mentions = new ArrayList<>();
         String fixedValue;       // для людей и омонимов значение задано заранее
         EntityType fixedType;
+        HomonymResolver.Meaning meaning; // статья Википедии для wiki_cache (если нашлась)
         ConceptEntity node;      // итоговый узел
     }
 
@@ -178,6 +179,12 @@ public class ConceptGraphPipeline {
         }
         stageMillis.put("База данных", System.currentTimeMillis() - t);
 
+        if (savedToDb && meaningSource != null) {
+            t = System.currentTimeMillis();
+            saveWikiCache(groups);
+            stageMillis.put("Кэш Википедии", System.currentTimeMillis() - t);
+        }
+
         // Два разных ключа могут дать одно значение в БД (value UNIQUE) — тогда это один узел
         Map<Long, ConceptEntity> nodesById = new LinkedHashMap<>();
         Map<Long, Integer> frequency = new HashMap<>();
@@ -227,6 +234,7 @@ public class ConceptGraphPipeline {
                 candidates = List.of();
             }
             if (candidates.isEmpty()) {
+                group.meaning = exactArticle(word, meaningSource.findMeanings(word));
                 result.put(entry.getKey(), group);
                 continue;
             }
@@ -239,12 +247,44 @@ public class ConceptGraphPipeline {
                 Group meaningGroup = result.computeIfAbsent(entry.getKey() + "#" + title, k -> new Group());
                 meaningGroup.fixedValue = title;
                 meaningGroup.fixedType = HomonymResolver.typeHint(title);
+                meaningGroup.meaning = choice.meaning();
                 meaningGroup.mentions.add(mention);
             }
             log.accept("[Омоним] " + word + ": варианты " + candidates.stream()
                     .map(HomonymResolver.Meaning::title).toList());
         }
         return result;
+    }
+
+    /** Статья, заголовок которой совпадает со словом (с точностью до падежа и ё) */
+    private static HomonymResolver.Meaning exactArticle(String word, List<HomonymResolver.Meaning> meanings) {
+        String key = RussianMorphology.stemKey(word);
+        for (HomonymResolver.Meaning meaning : meanings) {
+            if (RussianMorphology.stemKey(meaning.title()).equals(key)) {
+                return meaning;
+            }
+        }
+        return null;
+    }
+
+    /** Кэш Википедии: выбранная статья для каждого понятия, у которого она нашлась */
+    private void saveWikiCache(Map<String, Group> groups) {
+        int saved = 0;
+        for (Group group : groups.values()) {
+            HomonymResolver.Meaning meaning = group.meaning;
+            if (meaning == null) {
+                continue;
+            }
+            try {
+                int links = meaningSource.countLinks(meaning.title());
+                WikiCacheRepository.save(group.node.id(), meaning.url(), meaning.snippet(), links, meaning.length());
+                saved++;
+            } catch (Exception e) {
+                logError("[БД]: не удалось записать wiki_cache для " + group.node.value() + ": " + e.getMessage());
+                return;
+            }
+        }
+        log.accept("[Википедия]: в wiki_cache записано статей: " + saved);
     }
 
     // ---------------------------------------------------------------- узлы
