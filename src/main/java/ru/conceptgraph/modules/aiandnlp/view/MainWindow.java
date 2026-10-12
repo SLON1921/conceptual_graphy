@@ -218,7 +218,7 @@ public class MainWindow extends Application {
             lastMouseX = e.getX();
             lastMouseY = e.getY();
 
-            // ФИЧА МИШИ: Если зажато КОЛЁСИКО мыши (или ЛКМ + КЛАВИША SHORTCUT) — двигаем холст (панорамирование)
+            // Если зажато КОЛЁСИКО мыши (или ЛКМ + КЛАВИША SHORTCUT) — двигаем холст (панорамирование)
             if (e.getButton() == MouseButton.MIDDLE || e.isControlDown()) {
                 graphTranslateX += deltaX;
                 graphTranslateY += deltaY;
