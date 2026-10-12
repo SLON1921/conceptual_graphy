@@ -1,0 +1,23 @@
+# Компании и продукты: по плану «Google — продукт». Без словаря латиница считается технологией.
+Google
+Яндекс
+Amazon
+Microsoft
+Apple
+iPhone
+Android
+Samsung
+Facebook
+YouTube
+Telegram
+ВКонтакте
+Сбер
+Сбербанк
+Тинькофф
+Ozon
+Wildberries
+Tesla
+Intel
+NVIDIA
+OpenAI
+ChatGPT
