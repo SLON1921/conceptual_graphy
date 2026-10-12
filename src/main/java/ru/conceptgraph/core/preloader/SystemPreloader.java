@@ -17,12 +17,20 @@ import com.zaxxer.hikari.HikariDataSource;
 import java.io.InputStream;
 import java.sql.Connection;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
 
 public class SystemPreloader extends Preloader {
 
     private Stage preloaderStage;
     private ProgressBar progressBar;
     private Label statusLabel;
+
+    /** Открывается, когда все проверки прошли: MainApplication ждёт его перед показом окна */
+    private static final CountDownLatch CHECKS_PASSED = new CountDownLatch(1);
+
+    public static void awaitChecks() throws InterruptedException {
+        CHECKS_PASSED.await();
+    }
 
     @Override
     public void start(Stage primaryStage) {
@@ -80,6 +88,7 @@ public class SystemPreloader extends Preloader {
 
             // Закрытие прелоадера и переход к LoginFrame
             Platform.runLater(() -> preloaderStage.close());
+            CHECKS_PASSED.countDown();
 
         } catch (Exception e) {
             Platform.runLater(() -> {
