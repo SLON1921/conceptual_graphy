@@ -36,7 +36,7 @@ public class AppConfig {
      * @return Имя пользователя для авторизации в базе данных PostgreSQL
      */
     public static String getDbUsername() {
-        return properties.getProperty("db.username");
+        return properties.getProperty("db.user");
     }
 
     /**
@@ -76,7 +76,7 @@ public class AppConfig {
 
             // ПРОВЕРКА НА ПУСТОТУ
             validateProperty("db.url");
-            validateProperty("db.username");
+            validateProperty("db.user");
             validateProperty("db.password");
             validateProperty("db.pool.max-size");
 
