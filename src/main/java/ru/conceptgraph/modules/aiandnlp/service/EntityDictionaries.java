@@ -19,6 +19,7 @@ public final class EntityDictionaries {
     private static final Set<String> GEOGRAPHY = load("geography.txt");
     private static final Set<String> TECHNOLOGY = load("technology.txt");
     private static final Set<String> PERSON = load("person.txt");
+    private static final Set<String> PRODUCT = load("product.txt");
     private static final Set<String> FIRST_NAMES = load("first-names.txt");
 
     // Окончания русских топонимов: Новосибирск, Зеленоград, Екатеринбург, Севастополь, Иваново, Пушкино
@@ -30,6 +31,9 @@ public final class EntityDictionaries {
     /** Тип по словарю или null, если слова в словарях нет */
     public static EntityType lookup(String word) {
         String key = RussianMorphology.stemKey(word);
+        if (PRODUCT.contains(key)) {
+            return EntityType.PRODUCT;
+        }
         if (GEOGRAPHY.contains(key)) {
             return EntityType.GEOGRAPHY;
         }
