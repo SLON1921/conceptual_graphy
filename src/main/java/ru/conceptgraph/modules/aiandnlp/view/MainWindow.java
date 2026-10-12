@@ -18,11 +18,14 @@ import javafx.stage.Stage;
 import ru.conceptgraph.core.config.AppConfig;
 import ru.conceptgraph.core.errors.AppExceptionHandler;
 import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
+import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
+import ru.conceptgraph.modules.aiandnlp.service.WikipediaMeaningSource;
 import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
 import ru.conceptgraph.modules.aiandnlp.service.SupportedFormats;
 import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 import ru.conceptgraph.shared.ConceptEntity;
+import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.Edge;
 
 import java.io.File;
@@ -130,6 +133,18 @@ public class MainWindow extends Application {
         runButton.setMaxWidth(Double.MAX_VALUE);
         runButton.setDisable(true);
         runButton.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-background-color: #66FCF1; -fx-text-fill: #0B0C10; -fx-padding: 12; -fx-background-radius: 6; -fx-cursor: hand;");
+        HBox.setHgrow(runButton, Priority.ALWAYS);
+
+        // По заданию анализируется вся папка: все поддерживаемые файлы, включая вложенные папки
+        Button folderButton = new Button("📚 ВСЯ ПАПКА");
+        folderButton.setDisable(true);
+        folderButton.setStyle(btnStyle + " -fx-font-size: 14px; -fx-padding: 12 20;");
+
+        CheckBox wikiCheckBox = new CheckBox("Омонимы через Википедию");
+        wikiCheckBox.setStyle("-fx-text-fill: #8892B0; -fx-font-weight: bold;");
+
+        HBox runBar = new HBox(10, runButton, folderButton, wikiCheckBox);
+        runBar.setAlignment(Pos.CENTER_LEFT);
 
         // Панели управления слайдерами
         Label weightLabel = new Label("Порог веса связи (Мин: 0.20):");
@@ -172,11 +187,14 @@ public class MainWindow extends Application {
         logArea.setEditable(false);
         logArea.setStyle("-fx-control-inner-background: #1F2833; -fx-text-fill: #C5C6C7; -fx-font-family: 'Consolas'; -fx-border-color: #45A29E;");
 
+        // Справа вкладки из плана: Лог, Документы, Понятия, Даты, Ошибки, Статистика
+        ResultTabs resultTabs = new ResultTabs(logArea);
+
         // Добавляем элементы в сплит-панель и выставляем стартовые пропорции 40% на 60%
-        splitPane.getItems().addAll(canvasContainer, logArea);
+        splitPane.getItems().addAll(canvasContainer, resultTabs.getPane());
         splitPane.setDividerPositions(0.40);
 
-        centerLayout.getChildren().addAll(runButton, controlsPane, splitPane);
+        centerLayout.getChildren().addAll(runBar, controlsPane, splitPane);
 
         HBox bodyLayout = new HBox();
         bodyLayout.getChildren().addAll(sidebar, centerLayout);
@@ -239,7 +257,8 @@ public class MainWindow extends Application {
                 TreeItem<File> rootItem = createTreeNodes(selectedFolder);
                 rootItem.setExpanded(true);
                 fileTreeView.setRoot(rootItem);
-                logArea.setText("[Система]: Директория загружена. Выберите файл в дереве.");
+                folderButton.setDisable(false);
+                logArea.setText("[Система]: Директория загружена. Выберите файл в дереве или нажмите «Вся папка».");
             }
         });
 
@@ -252,24 +271,24 @@ public class MainWindow extends Application {
                 runButton.setDisable(true);
             }
         });
-        runButton.setOnAction(event -> {
-            if (selectedFileFromTree == null) return;
-
+        // Общий запуск анализа: loader в фоновом потоке готовит документы, конвейер их обрабатывает
+        AnalysisLauncher launcher = (title, loader) -> {
             logArea.clear();
             logArea.appendText("=================================================================\n");
-            logArea.appendText(" 🪐 СИНТЕЗ КИБЕР-ГРАФА: " + selectedFileFromTree.getName().toUpperCase() + "\n");
+            logArea.appendText(" 🪐 СИНТЕЗ КИБЕР-ГРАФА: " + title.toUpperCase() + "\n");
             logArea.appendText("=================================================================\n");
 
-            File fileToAnalyze = selectedFileFromTree;
             runButton.setDisable(true);
+            folderButton.setDisable(true);
+            boolean useWikipedia = wikiCheckBox.isSelected();
 
             Thread worker = new Thread(() -> {
                 try {
-                    TikaParserEngine tikaParser = new TikaParserEngine();
-                    String rawText = tikaParser.parseFile(fileToAnalyze.toPath());
+                    List<ConceptGraphPipeline.DocumentInput> documents = loader.load();
 
                     javafx.application.Platform.runLater(() -> {
-                        logArea.appendText("[1/3] Извлечение контента через Apache Tika выполнено.\n");
+                        logArea.appendText("[1/3] Извлечение контента через Apache Tika выполнено: "
+                                + documents.size() + " док.\n");
                         logArea.appendText("[2/3] Анализ ИИ Ollama и дедупликация понятий...\n");
                     });
 
@@ -278,15 +297,10 @@ public class MainWindow extends Application {
                             new AiGraphEngine(),
                             new AppExceptionHandler(),
                             line -> javafx.application.Platform.runLater(() -> logArea.appendText("  " + line + "\n"))
-                    );
+                    ).withMeaningSource(useWikipedia ? new WikipediaMeaningSource() : null);
 
                     // Весь анализ идёт в фоновом потоке, а списки для отрисовки меняем только в потоке JavaFX
-                    ConceptGraphPipeline.Result result = pipeline.process(
-                            fileToAnalyze.getName(),
-                            fileToAnalyze.getAbsolutePath(),
-                            fileToAnalyze.length(),
-                            rawText
-                    );
+                    ConceptGraphPipeline.Result result = pipeline.processAll(documents);
 
                     javafx.application.Platform.runLater(() -> {
                         currentResolvedConcepts.clear();
@@ -300,6 +314,7 @@ public class MainWindow extends Application {
                         logArea.appendText("[3/3] Генерация связей и рендеринг интерактивной 2D-карты...\n\n");
                         clearCanvas(gc, graphCanvas);
                         redrawGraph(gc, graphCanvas);
+                        resultTabs.show(result);
 
                         Map<Long, String> namesById = new HashMap<>();
                         for (ConceptEntity c : currentResolvedConcepts) {
@@ -325,16 +340,53 @@ public class MainWindow extends Application {
                 } catch (Exception e) {
                     javafx.application.Platform.runLater(() -> logArea.appendText("[Ошибка]: " + e.getMessage() + "\n"));
                 } finally {
-                    javafx.application.Platform.runLater(() -> runButton.setDisable(selectedFileFromTree == null));
+                    javafx.application.Platform.runLater(() -> {
+                        runButton.setDisable(selectedFileFromTree == null);
+                        folderButton.setDisable(currentFolder == null);
+                    });
                 }
             });
             worker.setDaemon(true); // не держим приложение открытым после закрытия окна
             worker.start();
+        };
+
+        runButton.setOnAction(event -> {
+            if (selectedFileFromTree == null) return;
+            File file = selectedFileFromTree;
+            launcher.launch(file.getName(), () -> {
+                String rawText = new TikaParserEngine().parseFile(file.toPath());
+                return List.of(new ConceptGraphPipeline.DocumentInput(
+                        file.getName(), file.getAbsolutePath(), file.length(), rawText));
+            });
+        });
+
+        folderButton.setOnAction(event -> {
+            if (currentFolder == null) return;
+            File folder = currentFolder;
+            launcher.launch("папка " + folder.getName(), () -> {
+                List<ConceptGraphPipeline.DocumentInput> documents = new ArrayList<>();
+                for (Document doc : new FolderScanner(new TikaParserEngine()).scanAndParse(folder)) {
+                    documents.add(new ConceptGraphPipeline.DocumentInput(
+                            doc.name(), doc.path(), new File(doc.path()).length(), doc.rawText()));
+                }
+                return documents;
+            });
         });
 
         Scene scene = new Scene(mainLayout, 1200, 800);
         primaryStage.setScene(scene);
         primaryStage.show();
+    }
+
+    /** Загрузка документов для анализа (выполняется в фоновом потоке) */
+    @FunctionalInterface
+    private interface DocumentLoader {
+        List<ConceptGraphPipeline.DocumentInput> load() throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface AnalysisLauncher {
+        void launch(String title, DocumentLoader loader);
     }
 
     private void redrawGraph(GraphicsContext gc, Canvas canvas) {
