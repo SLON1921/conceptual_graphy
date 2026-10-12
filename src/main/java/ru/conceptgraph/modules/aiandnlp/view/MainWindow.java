@@ -1,68 +1,113 @@
 package ru.conceptgraph.modules.aiandnlp.view;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.canvas.Canvas;
-import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Hyperlink;
+import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Slider;
+import javafx.scene.control.SplitPane;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
+import javafx.scene.control.TreeCell;
+import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeView;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.Paint;
+import javafx.scene.shape.Circle;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import ru.conceptgraph.core.config.AppConfig;
 import ru.conceptgraph.core.errors.AppExceptionHandler;
-import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
-import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
-import ru.conceptgraph.modules.aiandnlp.service.WikipediaMeaningSource;
-import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
+import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
+import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.SupportedFormats;
+import ru.conceptgraph.modules.aiandnlp.service.WikipediaMeaningSource;
+import ru.conceptgraph.modules.infrastructure.repository.ConnectionPool;
 import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 import ru.conceptgraph.shared.ConceptEntity;
-import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.Edge;
+import ru.conceptgraph.shared.EntityType;
 
 import java.io.File;
+import java.sql.Connection;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Главное окно: дерево файлов слева, граф понятий в центре, карточка понятия и вкладки справа,
+ * строка статуса внизу. Оформление и все цвета — в window.css.
+ */
 public class MainWindow extends Application {
 
-    private File currentFolder = null;
-    private File selectedFileFromTree = null;
+    private File currentFolder;
+    private File selectedFile;
 
-    private final List<ConceptEntity> currentResolvedConcepts = new ArrayList<>();
-    private final List<Edge> currentEdges = new ArrayList<>();
+    private ConceptGraphPipeline.Result lastResult;
+    private final Map<Long, ConceptEntity> conceptsById = new HashMap<>();
+    private final Set<EntityType> hiddenTypes = EnumSet.noneOf(EntityType.class);
+    private final Map<EntityType, ToggleButton> typeChips = new EnumMap<>(EntityType.class);
 
-    // МАТЕМАТИКА КИБЕР-ДВИЖКА 2026: Вращение, Масштаб и Панорамирование (MS Paint Style)
-    private double currentAngleOffset = 0.0;
-    private double minWeightThreshold = 0.20;
-    private double graphRadiusScale = 1.0;
+    /** Порядок типов в фильтрах над графом */
+    private static final EntityType[] CHIP_ORDER = {
+            EntityType.PERSON, EntityType.GEOGRAPHY, EntityType.TECHNOLOGY, EntityType.PRODUCT};
 
-    // Сдвиги виртуальной камеры для перемещения по холсту зажатым колесиком
-    private double graphTranslateX = 0.0;
-    private double graphTranslateY = 0.0;
+    private GraphView.Theme theme;
+    private GraphView graphView;
+    private ResultTabs resultTabs;
+    private TextArea logArea;
+    private VBox card;
 
-    // Вспомогательные переменные мышиных осей
-    private double lastMouseX = 0.0;
-    private double lastMouseY = 0.0;
+    private Button folderButton;
+    private Button fileButton;
+    private Button cancelButton;
+    private CheckBox wikiCheckBox;
+    private Slider topSlider;
+    private Label topValue;
+    private ProgressBar progressBar;
+    private Label progressText;
+    private Label countsText;
+    private Circle dbDot;
+    private Label dbText;
+    private Circle ollamaDot;
+    private Label ollamaText;
 
-    // Стили киберпанка 2026
-    private final String darkBg = "-fx-background-color: #0B0C10;";
-    private final String neonText = "-fx-text-fill: #66FCF1; -fx-font-weight: bold;";
-    private final String btnStyle = "-fx-background-color: #45A29E; -fx-text-fill: #0B0C10; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand;";
-    private final String inputStyle = "-fx-background-color: #1F2833; -fx-text-fill: #FFF; -fx-border-color: #45A29E; -fx-border-radius: 4; -fx-padding: 8;";
+    private Thread worker;
+    private final AtomicBoolean cancelled = new AtomicBoolean();
 
     @Override
-    public void start(Stage primaryStage) {
+    public void start(Stage stage) {
         // Настройки БД из application.properties: без этого пул соединений не стартует.
         // Если файла нет, окно всё равно открываем — граф построится без сохранения в БД.
         try {
@@ -71,454 +116,711 @@ public class MainWindow extends Application {
             System.err.println("[CONFIG] " + e.getMessage());
         }
 
-        primaryStage.setTitle("Concepter Graph OS - Enterprise Split & Navigation Engine");
+        BorderPane root = new BorderPane();
+        Scene scene = new Scene(root, 1280, 800);
+        scene.getStylesheets().add(MainWindow.class.getResource("window.css").toExternalForm());
+        theme = readTheme(root);
 
-        // --- ШАПКА ПРИЛОЖЕНИЯ ---
-        Label titleLabel = new Label("🎨 CONCEPTER ENTERPRISE");
-        titleLabel.setStyle(neonText + " -fx-font-size: 22px;");
+        root.setTop(buildTopBar(stage));
+        root.setCenter(buildBody());
+        root.setBottom(buildStatusBar());
+
+        stage.setTitle("Понятийный граф");
+        stage.setScene(scene);
+        stage.setMinWidth(980);
+        stage.setMinHeight(600);
+        stage.show();
+
+        showCard(null);
+        checkServices();
+    }
+
+    // ---------------- разметка ----------------
+
+    private HBox buildTopBar(Stage stage) {
+        Label brand = new Label("Понятийный граф");
+        brand.getStyleClass().add("brand");
 
         TextField pathField = new TextField();
-        pathField.setPromptText("Путь к базе знаний не выбран...");
+        pathField.setPromptText("Папка с документами не выбрана");
         pathField.setEditable(false);
-        pathField.setStyle(inputStyle);
+        pathField.setFocusTraversable(false);
+        pathField.getStyleClass().add("path-field");
         HBox.setHgrow(pathField, Priority.ALWAYS);
 
-        Button browseButton = new Button("📁 ОБЗОР ПАПКИ");
-        browseButton.setStyle(btnStyle + " -fx-padding: 8 20;");
-
-        HBox topBar = new HBox(20);
-        topBar.setAlignment(Pos.CENTER_LEFT);
-        topBar.setStyle("-fx-background-color: #1F2833; -fx-padding: 15; -fx-border-color: #45A29E; -fx-border-width: 0 0 2 0;");
-        topBar.getChildren().addAll(titleLabel, pathField, browseButton);
-
-        // --- СЛЕВА: ДЕРЕВО ПАПОК (TREEVIEW) ---
-        VBox sidebar = new VBox(12);
-        sidebar.setPrefWidth(260);
-        sidebar.setPadding(new Insets(15));
-        sidebar.setStyle("-fx-background-color: #151A21; -fx-border-color: #45A29E; -fx-border-width: 0 1 0 0;");
-
-        Label sidebarTitle = new Label("🧠 ДЕРЕВО ДИРЕКТОРИЙ");
-        sidebarTitle.setStyle("-fx-text-fill: #8892B0; -fx-font-weight: bold; -fx-font-size: 12px;");
-
-        TreeView<File> fileTreeView = new TreeView<>();
-        fileTreeView.setStyle("-fx-background-color: #1F2833; -fx-control-inner-background: #1F2833; -fx-border-color: #45A29E; -fx-border-radius: 4;");
-        VBox.setVgrow(fileTreeView, Priority.ALWAYS);
-
-        fileTreeView.setCellFactory(tv -> new TreeCell<>() {
-            @Override
-            protected void updateItem(File item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setStyle("-fx-text-fill: white;");
-                } else {
-                    setText(item.getName());
-                    if (item.isDirectory()) {
-                        setStyle("-fx-text-fill: #45A29E; -fx-font-weight: bold;");
-                    } else {
-                        setStyle("-fx-text-fill: #C5C6C7;");
-                    }
-                }
+        Button openButton = new Button("Открыть папку…");
+        DirectoryChooser chooser = new DirectoryChooser();
+        openButton.setOnAction(e -> {
+            File folder = chooser.showDialog(stage);
+            if (folder != null) {
+                chooser.setInitialDirectory(folder.getParentFile());
+                pathField.setText(folder.getAbsolutePath());
+                openFolder(folder);
             }
         });
 
-        sidebar.getChildren().addAll(sidebarTitle, fileTreeView);
-        // --- ЦЕНТРАЛЬНАЯ РАБОЧАЯ ОБЛАСТЬ ---
-        VBox centerLayout = new VBox(15);
-        centerLayout.setPadding(new Insets(20));
-        centerLayout.setStyle(darkBg);
-        HBox.setHgrow(centerLayout, Priority.ALWAYS);
+        HBox bar = new HBox(brand, pathField, openButton);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.getStyleClass().add("top-bar");
+        return bar;
+    }
 
-        Button runButton = new Button("🚀 СИНТЕЗИРОВАТЬ СЕМАНТИЧЕСКИЙ ГРАФ ДОКУМЕНТА");
-        runButton.setMaxWidth(Double.MAX_VALUE);
-        runButton.setDisable(true);
-        runButton.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-background-color: #66FCF1; -fx-text-fill: #0B0C10; -fx-padding: 12; -fx-background-radius: 6; -fx-cursor: hand;");
-        HBox.setHgrow(runButton, Priority.ALWAYS);
+    private TreeView<File> fileTree;
+    private Label filesLabel;
 
-        // По заданию анализируется вся папка: все поддерживаемые файлы, включая вложенные папки
-        Button folderButton = new Button("📚 ВСЯ ПАПКА");
-        folderButton.setDisable(true);
-        folderButton.setStyle(btnStyle + " -fx-font-size: 14px; -fx-padding: 12 20;");
+    private SplitPane buildBody() {
+        // --- слева: файлы и запуск ---
+        filesLabel = new Label("ФАЙЛЫ");
+        filesLabel.getStyleClass().add("section-label");
+        filesLabel.setPadding(new Insets(12, 12, 6, 12));
 
-        CheckBox wikiCheckBox = new CheckBox("Омонимы через Википедию");
-        wikiCheckBox.setStyle("-fx-text-fill: #8892B0; -fx-font-weight: bold;");
+        fileTree = new TreeView<>();
+        fileTree.setShowRoot(true);
+        fileTree.setCellFactory(tv -> new FileCell());
+        VBox.setVgrow(fileTree, Priority.ALWAYS);
+        fileTree.getSelectionModel().selectedItemProperty().addListener((obs, old, item) -> {
+            File f = item == null ? null : item.getValue();
+            selectedFile = f != null && SupportedFormats.isSupported(f) ? f : null;
+            updateButtons();
+        });
+        fileTree.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2 && selectedFile != null && worker == null) {
+                analyzeFile();
+            }
+        });
 
-        HBox runBar = new HBox(10, runButton, folderButton, wikiCheckBox);
-        runBar.setAlignment(Pos.CENTER_LEFT);
+        folderButton = new Button("Анализ папки");
+        folderButton.getStyleClass().add("primary");
+        folderButton.setMaxWidth(Double.MAX_VALUE);
+        folderButton.setOnAction(e -> analyzeFolder());
 
-        // Панели управления слайдерами
-        Label weightLabel = new Label("Порог веса связи (Мин: 0.20):");
-        weightLabel.setStyle("-fx-text-fill: #8892B0; -fx-font-weight: bold; -fx-min-width: 220px;");
-        Slider weightSlider = new Slider(0.0, 1.0, 0.20);
-        HBox.setHgrow(weightSlider, Priority.ALWAYS);
-        HBox weightBar = new HBox(10);
-        weightBar.getChildren().addAll(weightLabel, weightSlider);
+        fileButton = new Button("Анализ файла");
+        fileButton.setMaxWidth(Double.MAX_VALUE);
+        fileButton.setTooltip(new Tooltip("Или двойной клик по файлу в дереве"));
+        fileButton.setOnAction(e -> analyzeFile());
 
-        Label scaleLabel = new Label("Масштаб круга графа (100%):");
-        scaleLabel.setStyle("-fx-text-fill: #8892B0; -fx-font-weight: bold; -fx-min-width: 220px;");
-        Slider scaleSlider = new Slider(0.4, 2.5, 1.0);
-        HBox.setHgrow(scaleSlider, Priority.ALWAYS);
-        HBox scaleBar = new HBox(10);
-        scaleBar.getChildren().addAll(scaleLabel, scaleSlider);
+        wikiCheckBox = new CheckBox("Уточнять омонимы по Википедии");
+        wikiCheckBox.setWrapText(true);
 
-        VBox controlsPane = new VBox(8);
-        controlsPane.getChildren().addAll(weightBar, scaleBar);
+        VBox actions = new VBox(folderButton, fileButton, wikiCheckBox);
+        actions.getStyleClass().add("side-actions");
 
-        // ИСПРАВЛЕНА РАЗМЕТКА: Профессиональный SplitPane для регулирования окон сдвигом текста!
-        SplitPane splitPane = new SplitPane();
-        splitPane.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
-        VBox.setVgrow(splitPane, Priority.ALWAYS);
+        VBox side = new VBox(filesLabel, fileTree, actions);
+        side.getStyleClass().add("side");
+        side.setMinWidth(200);
 
-        // Левый контейнер под адаптивный холст
-        VBox canvasContainer = new VBox();
-        canvasContainer.setStyle("-fx-background-color: #12161C; -fx-border-color: #45A29E; -fx-border-radius: 4;");
+        // --- центр: фильтры и граф ---
+        graphView = new GraphView(theme);
+        graphView.setOnSelect(this::selectConcept);
+        graphView.setOnStats(stats -> countsText.setText(stats[1] == 0 ? ""
+                : stats[0] + " из " + stats[1] + " понятий · " + stats[2] + " связей"));
 
-        Canvas graphCanvas = new Canvas(400, 480); // Стартовый размер, дальше будет растягиваться!
-        GraphicsContext gc = graphCanvas.getGraphicsContext2D();
-        canvasContainer.getChildren().add(graphCanvas);
+        StackPane canvasPane = new StackPane(graphView);
+        canvasPane.getStyleClass().add("canvas-pane");
+        canvasPane.setMinSize(0, 0);
 
-        // Автоматически привязываем размеры холста к размерам контейнера при сдвиге текста!
-        graphCanvas.widthProperty().bind(canvasContainer.widthProperty().subtract(4));
-        graphCanvas.heightProperty().bind(canvasContainer.heightProperty().subtract(4));
+        Button zoomIn = zoomButton("+", "Приблизить", () -> graphView.zoomBy(1.2));
+        Button zoomOut = zoomButton("−", "Отдалить", () -> graphView.zoomBy(1 / 1.2));
+        Button zoomReset = zoomButton("⟲", "Сбросить вид", graphView::resetView);
+        VBox zoom = new VBox(4, zoomIn, zoomOut, zoomReset);
+        zoom.setPickOnBounds(false);
+        zoom.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        StackPane.setAlignment(zoom, Pos.TOP_RIGHT);
+        StackPane.setMargin(zoom, new Insets(10));
 
-        // Правый контейнер под статистику
-        TextArea logArea = new TextArea();
-        logArea.setPromptText("Текстовые результаты анализа документов...");
+        Label hint = new Label("Колесо: масштаб · перетаскивание: сдвиг · клик по узлу: подробности");
+        hint.getStyleClass().add("canvas-hint");
+        hint.setMouseTransparent(true);
+        StackPane.setAlignment(hint, Pos.BOTTOM_LEFT);
+        StackPane.setMargin(hint, new Insets(8, 10, 8, 10));
+
+        Button savePng = new Button("Сохранить PNG");
+        savePng.setOnAction(e -> savePng(savePng));
+        StackPane.setAlignment(savePng, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(savePng, new Insets(8, 10, 8, 10));
+
+        canvasPane.getChildren().addAll(zoom, hint, savePng);
+
+        VBox center = new VBox(buildGraphToolbar(), canvasPane);
+        VBox.setVgrow(canvasPane, Priority.ALWAYS);
+        center.setMinWidth(400);
+
+        // --- справа: карточка понятия и вкладки ---
+        logArea = new TextArea();
         logArea.setEditable(false);
-        logArea.setStyle("-fx-control-inner-background: #1F2833; -fx-text-fill: #C5C6C7; -fx-font-family: 'Consolas'; -fx-border-color: #45A29E;");
+        logArea.setWrapText(true);
+        resultTabs = new ResultTabs(logArea, theme);
+        resultTabs.setOnSelect(this::selectConcept);
 
-        // Справа вкладки из плана: Лог, Документы, Понятия, Даты, Ошибки, Статистика
-        ResultTabs resultTabs = new ResultTabs(logArea);
+        card = new VBox();
+        card.getStyleClass().add("concept-card");
 
-        // Добавляем элементы в сплит-панель и выставляем стартовые пропорции 40% на 60%
-        splitPane.getItems().addAll(canvasContainer, resultTabs.getPane());
-        splitPane.setDividerPositions(0.40);
+        VBox right = new VBox(card, resultTabs.getPane());
+        VBox.setVgrow(resultTabs.getPane(), Priority.ALWAYS);
+        right.getStyleClass().add("right-pane");
+        right.setMinWidth(300);
 
-        centerLayout.getChildren().addAll(runBar, controlsPane, splitPane);
+        SplitPane body = new SplitPane(side, center, right);
+        body.setOrientation(Orientation.HORIZONTAL);
+        body.setDividerPositions(0.18, 0.67);
+        SplitPane.setResizableWithParent(side, false);
+        SplitPane.setResizableWithParent(right, false);
+        return body;
+    }
 
-        HBox bodyLayout = new HBox();
-        bodyLayout.getChildren().addAll(sidebar, centerLayout);
-        VBox.setVgrow(bodyLayout, Priority.ALWAYS);
-
-        VBox mainLayout = new VBox();
-        mainLayout.getChildren().addAll(topBar, bodyLayout);
-
-        // --- ДИНАМИЧЕСКИЙ РЕРАЙТ ХОЛСТА ПРИ РЕСАЙЗЕ ОКНА И СДВИГЕ ТЕКСТА ---
-        graphCanvas.widthProperty().addListener(o -> {
-            if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
-        });
-        graphCanvas.heightProperty().addListener(o -> {
-            if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
-        });
-
-        weightSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
-            minWeightThreshold = newVal.doubleValue();
-            weightLabel.setText(String.format("Порог веса связи (Мин: %.2f):", minWeightThreshold));
-            if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
-        });
-
-        scaleSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
-            graphRadiusScale = newVal.doubleValue();
-            scaleLabel.setText(String.format("Масштаб круга графа (%d%%):", (int) (graphRadiusScale * 100)));
-            if (!currentResolvedConcepts.isEmpty()) redrawGraph(gc, graphCanvas);
-        });
-
-        // --- ИНТЕРАКТИВНАЯ НАВИГАЦИЯ МЫШИ (MS PAINT STYLE + ВРАЩЕНИЕ) ---
-        graphCanvas.setOnMousePressed(e -> {
-            lastMouseX = e.getX();
-            lastMouseY = e.getY();
-        });
-
-        graphCanvas.setOnMouseDragged(e -> {
-            if (currentResolvedConcepts.isEmpty()) return;
-            double deltaX = e.getX() - lastMouseX;
-            double deltaY = e.getY() - lastMouseY;
-            lastMouseX = e.getX();
-            lastMouseY = e.getY();
-
-            // Если зажато КОЛЁСИКО мыши (или ЛКМ + КЛАВИША SHORTCUT) — двигаем холст (панорамирование)
-            if (e.getButton() == MouseButton.MIDDLE || e.isControlDown()) {
-                graphTranslateX += deltaX;
-                graphTranslateY += deltaY;
-            } else {
-                // Если зажата обычная левая кнопка — вращаем граф вокруг оси
-                currentAngleOffset += deltaX * 0.01;
-            }
-            redrawGraph(gc, graphCanvas);
-        });
-
-        // --- ЛОГИКА ДИРЕКТОРИЙ И КОНВЕЙЕРА ИИ ---
-        DirectoryChooser directoryChooser = new DirectoryChooser();
-        browseButton.setOnAction(event -> {
-            File selectedFolder = directoryChooser.showDialog(primaryStage);
-            if (selectedFolder != null) {
-                this.currentFolder = selectedFolder;
-                pathField.setText(selectedFolder.getAbsolutePath());
-                TreeItem<File> rootItem = createTreeNodes(selectedFolder);
-                rootItem.setExpanded(true);
-                fileTreeView.setRoot(rootItem);
-                folderButton.setDisable(false);
-                logArea.setText("[Система]: Директория загружена. Выберите файл в дереве или нажмите «Вся папка».");
-            }
-        });
-
-        fileTreeView.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
-            if (newValue != null && newValue.getValue().isFile()) {
-                selectedFileFromTree = newValue.getValue();
-                runButton.setDisable(false);
-            } else {
-                selectedFileFromTree = null;
-                runButton.setDisable(true);
-            }
-        });
-        // Общий запуск анализа: loader в фоновом потоке готовит документы, конвейер их обрабатывает
-        AnalysisLauncher launcher = (title, loader) -> {
-            logArea.clear();
-            logArea.appendText("=================================================================\n");
-            logArea.appendText(" 🪐 СИНТЕЗ КИБЕР-ГРАФА: " + title.toUpperCase() + "\n");
-            logArea.appendText("=================================================================\n");
-
-            runButton.setDisable(true);
-            folderButton.setDisable(true);
-            boolean useWikipedia = wikiCheckBox.isSelected();
-
-            Thread worker = new Thread(() -> {
-                try {
-                    List<ConceptGraphPipeline.DocumentInput> documents = loader.load();
-
-                    javafx.application.Platform.runLater(() -> {
-                        logArea.appendText("[1/3] Извлечение контента через Apache Tika выполнено: "
-                                + documents.size() + " док.\n");
-                        logArea.appendText("[2/3] Анализ ИИ Ollama и дедупликация понятий...\n");
-                    });
-
-                    ConceptGraphPipeline pipeline = new ConceptGraphPipeline(
-                            new OpenNlpEngine(),
-                            new AiGraphEngine(),
-                            new AppExceptionHandler(),
-                            line -> javafx.application.Platform.runLater(() -> logArea.appendText("  " + line + "\n"))
-                    ).withMeaningSource(useWikipedia ? new WikipediaMeaningSource() : null);
-
-                    // Весь анализ идёт в фоновом потоке, а списки для отрисовки меняем только в потоке JavaFX
-                    ConceptGraphPipeline.Result result = pipeline.processAll(documents);
-
-                    javafx.application.Platform.runLater(() -> {
-                        currentResolvedConcepts.clear();
-                        currentResolvedConcepts.addAll(result.nodes());
-                        currentEdges.clear();
-                        currentEdges.addAll(result.edges());
-                        currentAngleOffset = 0.0;
-                        graphTranslateX = 0.0; // Сбрасываем сдвиги камеры на старт
-                        graphTranslateY = 0.0;
-
-                        logArea.appendText("[3/3] Генерация связей и рендеринг интерактивной 2D-карты...\n\n");
-                        clearCanvas(gc, graphCanvas);
-                        redrawGraph(gc, graphCanvas);
-                        resultTabs.show(result);
-
-                        Map<Long, String> namesById = new HashMap<>();
-                        for (ConceptEntity c : currentResolvedConcepts) {
-                            namesById.put(c.id(), c.value());
-                            String icon = c.type() == ru.conceptgraph.shared.EntityType.PERSON ? "👤" :
-                                    c.type() == ru.conceptgraph.shared.EntityType.GEOGRAPHY ? "🌍" :
-                                            c.type() == ru.conceptgraph.shared.EntityType.TECHNOLOGY ? "💻" : "📦";
-                            logArea.appendText(String.format("  %s Узел [%s] (ID: %d) | Тип: %s (%d -> %d)\n",
-                                    icon, c.value(), c.id(), c.type(), c.startChar(), c.endChar()));
-                        }
-
-                        logArea.appendText("\n🌐 СФОРМИРОВАННЫЕ СЕМАНТИЧЕСКИЕ СВЯЗИ (EDGES):\n");
-                        for (Edge edge : currentEdges) {
-                            String srcW = namesById.getOrDefault(edge.sourceConceptId(), "Узел_" + edge.sourceConceptId());
-                            String trgW = namesById.getOrDefault(edge.targetConceptId(), "Узел_" + edge.targetConceptId());
-                            logArea.appendText(String.format("  • Связь: [%s] 🔗 [%s] | Вес: %.2f\n", srcW, trgW, edge.weight()));
-                        }
-                        logArea.appendText("\n=================================================================\n");
-                        logArea.appendText(" 📊 [НАВИГАЦИЯ]: Нажмите CTRL+ЛКМ или зажмите КОЛЁСИКО мыши для ПЕРЕМЕЩЕНИЯ графа!\n");
-                        logArea.appendText("=================================================================\n");
-                    });
-
-                } catch (Exception e) {
-                    javafx.application.Platform.runLater(() -> logArea.appendText("[Ошибка]: " + e.getMessage() + "\n"));
-                } finally {
-                    javafx.application.Platform.runLater(() -> {
-                        runButton.setDisable(selectedFileFromTree == null);
-                        folderButton.setDisable(currentFolder == null);
-                    });
+    private FlowPane buildGraphToolbar() {
+        HBox chips = new HBox(6);
+        chips.setAlignment(Pos.CENTER_LEFT);
+        for (EntityType type : CHIP_ORDER) {
+            ToggleButton chip = new ToggleButton(GraphView.typeName(type));
+            chip.setSelected(true);
+            chip.setGraphic(new Circle(4.5, theme.typeColor(type)));
+            chip.getStyleClass().add("type-chip");
+            chip.setTooltip(new Tooltip("Показать или скрыть на графе"));
+            chip.selectedProperty().addListener((obs, old, on) -> {
+                chip.getStyleClass().remove("off");
+                if (on) {
+                    hiddenTypes.remove(type);
+                } else {
+                    hiddenTypes.add(type);
+                    chip.getStyleClass().add("off");
                 }
+                graphView.setHiddenTypes(hiddenTypes);
             });
-            worker.setDaemon(true); // не держим приложение открытым после закрытия окна
-            worker.start();
-        };
+            typeChips.put(type, chip);
+            chips.getChildren().add(chip);
+        }
 
-        runButton.setOnAction(event -> {
-            if (selectedFileFromTree == null) return;
-            File file = selectedFileFromTree;
-            launcher.launch(file.getName(), () -> {
-                String rawText = new TikaParserEngine().parseFile(file.toPath());
-                return List.of(new ConceptGraphPipeline.DocumentInput(
-                        file.getName(), file.getAbsolutePath(), file.length(), rawText));
-            });
+        TextField search = new TextField();
+        search.setPromptText("Найти понятие");
+        search.getStyleClass().add("search-field");
+        search.textProperty().addListener((obs, old, text) -> {
+            graphView.setQuery(text);
+            resultTabs.setQuery(text);
         });
 
-        folderButton.setOnAction(event -> {
-            if (currentFolder == null) return;
-            File folder = currentFolder;
-            launcher.launch("папка " + folder.getName(), () -> {
-                List<ConceptGraphPipeline.DocumentInput> documents = new ArrayList<>();
-                for (Document doc : new FolderScanner(new TikaParserEngine()).scanAndParse(folder)) {
-                    documents.add(new ConceptGraphPipeline.DocumentInput(
-                            doc.name(), doc.path(), new File(doc.path()).length(), doc.rawText()));
-                }
-                return documents;
-            });
+        Label topLabel = new Label("Топ");
+        topLabel.getStyleClass().add("toolbar-label");
+        topSlider = new Slider(5, 50, 50);
+        topSlider.setPrefWidth(120);
+        topValue = new Label("50");
+        topValue.getStyleClass().add("toolbar-value");
+        topSlider.valueProperty().addListener((obs, old, v) -> {
+            topValue.setText(String.valueOf(v.intValue()));
+            graphView.setTopN(v.intValue());
+        });
+        HBox top = new HBox(6, topLabel, topSlider, topValue);
+        top.setAlignment(Pos.CENTER_LEFT);
+        Tooltip.install(top, new Tooltip("Сколько самых частых понятий показать"));
+
+        Label weightLabel = new Label("Вес связи от");
+        weightLabel.getStyleClass().add("toolbar-label");
+        Slider weightSlider = new Slider(0.0, 0.9, 0.2);
+        weightSlider.setPrefWidth(120);
+        Label weightValue = new Label("0.20");
+        weightValue.getStyleClass().add("toolbar-value");
+        weightSlider.valueProperty().addListener((obs, old, v) -> {
+            weightValue.setText(String.format(Locale.ROOT, "%.2f", v.doubleValue()));
+            graphView.setMinWeight(v.doubleValue());
+        });
+        HBox weight = new HBox(6, weightLabel, weightSlider, weightValue);
+        weight.setAlignment(Pos.CENTER_LEFT);
+
+        FlowPane toolbar = new FlowPane(chips, search, top, weight);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.getStyleClass().add("graph-toolbar");
+        return toolbar;
+    }
+
+    private HBox buildStatusBar() {
+        dbDot = new Circle(4);
+        dbDot.getStyleClass().add("status-dot");
+        dbText = statusLabel("БД: проверка…");
+        ollamaDot = new Circle(4);
+        ollamaDot.getStyleClass().add("status-dot");
+        ollamaText = statusLabel("Ollama: проверка…");
+        countsText = statusLabel("");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        progressText = statusLabel("Готов к работе");
+        progressBar = new ProgressBar(0);
+        progressBar.setPrefWidth(180);
+        progressBar.setPrefHeight(8);
+        cancelButton = new Button("Отмена");
+        cancelButton.setMinWidth(Region.USE_PREF_SIZE);
+        progressText.setMinWidth(Region.USE_PREF_SIZE);
+        cancelButton.setDisable(true);
+        cancelButton.setOnAction(e -> {
+            cancelled.set(true);
+            cancelButton.setDisable(true);
+            progressText.setText("Отменяю…");
         });
 
-        Scene scene = new Scene(mainLayout, 1200, 800);
-        primaryStage.setScene(scene);
-        primaryStage.show();
+        HBox db = new HBox(6, dbDot, dbText);
+        db.setAlignment(Pos.CENTER_LEFT);
+        HBox ollama = new HBox(6, ollamaDot, ollamaText);
+        ollama.setAlignment(Pos.CENTER_LEFT);
+        HBox progress = new HBox(8, progressText, progressBar, cancelButton);
+        progress.setAlignment(Pos.CENTER_LEFT);
+
+        HBox bar = new HBox(db, ollama, countsText, spacer, progress);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.getStyleClass().add("status-bar");
+        return bar;
     }
 
-    /** Загрузка документов для анализа (выполняется в фоновом потоке) */
-    @FunctionalInterface
-    private interface DocumentLoader {
-        List<ConceptGraphPipeline.DocumentInput> load() throws Exception;
+    private static Label statusLabel(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("status-text");
+        return label;
     }
 
-    @FunctionalInterface
-    private interface AnalysisLauncher {
-        void launch(String title, DocumentLoader loader);
+    private static Button zoomButton(String text, String tooltip, Runnable action) {
+        Button button = new Button(text);
+        button.getStyleClass().add("zoom-button");
+        button.setTooltip(new Tooltip(tooltip));
+        button.setOnAction(e -> action.run());
+        return button;
     }
 
-    private void redrawGraph(GraphicsContext gc, Canvas canvas) {
-        int nodeCount = currentResolvedConcepts.size();
-        if (nodeCount == 0) return;
+    // ---------------- дерево файлов ----------------
 
-        gc.setFill(Color.web("#12161C"));
-        gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-
-        // Базовый динамический центр холста (меняется на лету при сдвиге панели текста!)
-        // ИСПРАВЛЕНО: Добавляем виртуальные смещения камеры graphTranslateX и graphTranslateY!
-        double centerX = canvas.getWidth() / 2 + graphTranslateX;
-        double centerY = canvas.getHeight() / 2 + graphTranslateY;
-
-        // Базовый радиус кольца адаптирован под новые большие размеры окна
-        double radius = (Math.min(canvas.getWidth(), canvas.getHeight()) / 2 - 85) * graphRadiusScale;
-
-        double[] coordsX = new double[nodeCount];
-        double[] coordsY = new double[nodeCount];
-
-        for (int i = 0; i < nodeCount; i++) {
-            double angle = 2 * Math.PI * i / nodeCount + currentAngleOffset;
-            coordsX[i] = centerX + radius * Math.cos(angle);
-            coordsY[i] = centerY + radius * Math.sin(angle);
-        }
-
-        // Рёбра ссылаются на ID из БД, а точки лежат по индексам списка: строим карту ID -> индекс
-        Map<Long, Integer> indexById = new HashMap<>();
-        for (int i = 0; i < nodeCount; i++) {
-            indexById.put(currentResolvedConcepts.get(i).id(), i);
-        }
-
-        // 1. Отрисовка неоновых ребер и названий семантических связей
-        gc.setLineWidth(1.8);
-        for (Edge edge : currentEdges) {
-            if (edge.weight() < minWeightThreshold) continue;
-
-            Integer srcIdx = indexById.get(edge.sourceConceptId());
-            Integer trgIdx = indexById.get(edge.targetConceptId());
-
-            if (srcIdx != null && trgIdx != null) {
-                double x1 = coordsX[srcIdx];
-                double y1 = coordsY[srcIdx];
-                double x2 = coordsX[trgIdx];
-                double y2 = coordsY[trgIdx];
-
-                // --- ЗАЩИТА JAVAFX UI ОТ ПАДЕНИЙ (Opacity Range Check) ---
-                double calculatedOpacity = edge.weight() * 1.3;
-                if (calculatedOpacity < 0.0) calculatedOpacity = 0.0;
-                if (calculatedOpacity > 1.0) calculatedOpacity = 1.0;
-
-                // Рисуем неоновую линию связи
-                gc.setStroke(Color.web("#66FCF1", calculatedOpacity));
-                gc.strokeLine(x1, y1, x2, y2);
-
-                // Отрисовка текста связи (Предиката) по центру линии
-                if (edge.label() != null && !edge.label().isBlank()) {
-                    double midX = (x1 + x2) / 2;
-                    double midY = (y1 + y2) / 2;
-
-                    gc.save();
-                    gc.setFont(javafx.scene.text.Font.font("Consolas", 9));
-                    String labelText = edge.label().toLowerCase();
-
-                    double textWidth = labelText.length() * 6.0;
-                    double textHeight = 12.0;
-
-                    // Рисуем темную плашку-подложку, чтобы линии не перекрывали буквы
-                    gc.setFill(Color.web("#12161C", 0.85));
-                    gc.fillRect(midX - textWidth / 2 - 4, midY - textHeight / 2, textWidth + 8, textHeight);
-
-                    // Рендерим само действие
-                    gc.setFill(Color.web("#66FCF1"));
-                    gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
-                    gc.fillText(labelText, midX, midY + 3);
-
-                    gc.restore();
-                }
-            }
-        }
-
-        // 2. Отрисовка кружочков и адаптивного выравнивания текста
-        for (int i = 0; i < nodeCount; i++) {
-            ConceptEntity concept = currentResolvedConcepts.get(i);
-            double x = coordsX[i];
-            double y = coordsY[i];
-
-            Color nodeColor = Color.web("#45A29E");
-            if (concept.type() == ru.conceptgraph.shared.EntityType.PERSON) nodeColor = Color.web("#FF007F");
-            else if (concept.type() == ru.conceptgraph.shared.EntityType.GEOGRAPHY) nodeColor = Color.web("#00FFCC");
-            else if (concept.type() == ru.conceptgraph.shared.EntityType.TECHNOLOGY) nodeColor = Color.web("#FFFF00");
-
-            gc.setFill(nodeColor);
-            gc.fillOval(x - 7, y - 7, 14, 14);
-            gc.setStroke(Color.WHITE);
-            gc.setLineWidth(1.0);
-            gc.strokeOval(x - 7, y - 7, 14, 14);
-
-            gc.setFill(Color.WHITE);
-            gc.setFont(javafx.scene.text.Font.font("Consolas", nodeCount > 25 ? 9 : 11));
-
-            if (x > centerX) {
-                gc.setTextAlign(javafx.scene.text.TextAlignment.LEFT);
-                gc.fillText(concept.value(), x + 12, y + 3);
-            } else {
-                gc.setTextAlign(javafx.scene.text.TextAlignment.RIGHT);
-                gc.fillText(concept.value(), x - 12, y + 3);
-            }
-        }
-    }
-
-    private void clearCanvas(GraphicsContext gc, Canvas canvas) {
-        gc.setFill(Color.web("#12161C"));
-        gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+    private void openFolder(File folder) {
+        currentFolder = folder;
+        selectedFile = null;
+        TreeItem<File> rootItem = createTreeNodes(folder);
+        rootItem.setExpanded(true);
+        fileTree.setRoot(rootItem);
+        int[] counts = countFiles(folder);
+        filesLabel.setText("ФАЙЛЫ · " + counts[0] + " ИЗ " + counts[1]);
+        logArea.setText("Папка: " + folder.getAbsolutePath() + "\n");
+        updateButtons();
     }
 
     private TreeItem<File> createTreeNodes(File file) {
         TreeItem<File> item = new TreeItem<>(file);
-        if (file.isDirectory()) {
-            File[] files = file.listFiles();
-            if (files != null) {
-                for (File child : files) {
-                    if (child.isDirectory()) {
-                        item.getChildren().add(createTreeNodes(child));
-                    } else if (SupportedFormats.isSupported(child)) {
-                        // тот же список форматов, что и у сканера папок
-                        item.getChildren().add(new TreeItem<>(child));
-                    }
-                }
+        File[] children = file.listFiles();
+        if (children == null) {
+            return item;
+        }
+        // сначала папки, потом файлы, по алфавиту
+        Arrays.sort(children, Comparator.comparing((File f) -> !f.isDirectory())
+                .thenComparing(f -> f.getName().toLowerCase(Locale.ROOT)));
+        for (File child : children) {
+            if (child.isHidden() || child.getName().startsWith(".") || child.getName().startsWith("~$")) {
+                continue;
+            }
+            if (child.isDirectory()) {
+                TreeItem<File> sub = createTreeNodes(child);
+                sub.setExpanded(true);
+                item.getChildren().add(sub);
+            } else {
+                item.getChildren().add(new TreeItem<>(child));
             }
         }
         return item;
+    }
+
+    /** {поддерживаемых файлов, всех файлов} в папке и подпапках */
+    private static int[] countFiles(File folder) {
+        int[] counts = new int[2];
+        File[] children = folder.listFiles();
+        if (children == null) {
+            return counts;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                int[] sub = countFiles(child);
+                counts[0] += sub[0];
+                counts[1] += sub[1];
+            } else if (!child.isHidden() && !child.getName().startsWith(".") && !child.getName().startsWith("~$")) {
+                counts[1]++;
+                if (SupportedFormats.isSupported(child)) {
+                    counts[0]++;
+                }
+            }
+        }
+        return counts;
+    }
+
+    /** Те же файлы, что берёт FolderScanner: все поддерживаемые, включая вложенные папки */
+    private static void collectSupported(File folder, List<File> out) {
+        File[] children = folder.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                collectSupported(child, out);
+            } else if (SupportedFormats.isSupported(child)) {
+                out.add(child);
+            }
+        }
+    }
+
+    /** Строка дерева: имя файла и его формат; неподдерживаемые приглушены */
+    private static final class FileCell extends TreeCell<File> {
+        @Override
+        protected void updateItem(File file, boolean empty) {
+            super.updateItem(file, empty);
+            getStyleClass().removeAll("folder", "unsupported");
+            setTooltip(null);
+            if (empty || file == null) {
+                setText(null);
+                setGraphic(null);
+                return;
+            }
+            setText(file.getName());
+            if (file.isDirectory()) {
+                getStyleClass().add("folder");
+                setGraphic(null);
+                return;
+            }
+            String name = file.getName();
+            int dot = name.lastIndexOf('.');
+            Label badge = new Label(dot == -1 ? "?" : name.substring(dot + 1).toLowerCase(Locale.ROOT));
+            badge.getStyleClass().add("ext-badge");
+            if (!SupportedFormats.isSupported(file)) {
+                getStyleClass().add("unsupported");
+                badge.getStyleClass().add("unsupported");
+                setTooltip(new Tooltip("Формат не поддерживается, файл будет пропущен"));
+            }
+            setGraphic(badge);
+            setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
+            setGraphicTextGap(8);
+        }
+    }
+
+    // ---------------- запуск анализа ----------------
+
+    private void analyzeFolder() {
+        if (currentFolder == null) {
+            return;
+        }
+        List<File> files = new ArrayList<>();
+        collectSupported(currentFolder, files);
+        runAnalysis("папка " + currentFolder.getName(), files);
+    }
+
+    private void analyzeFile() {
+        if (selectedFile != null) {
+            runAnalysis(selectedFile.getName(), List.of(selectedFile));
+        }
+    }
+
+    private void updateButtons() {
+        boolean busy = worker != null;
+        folderButton.setDisable(busy || currentFolder == null);
+        fileButton.setDisable(busy || selectedFile == null);
+    }
+
+    private void runAnalysis(String title, List<File> files) {
+        if (worker != null) {
+            return;
+        }
+        cancelled.set(false);
+        boolean useWikipedia = wikiCheckBox.isSelected();
+        long started = System.currentTimeMillis();
+
+        logArea.appendText("\n— Анализ: " + title + " (" + files.size() + " файлов) —\n");
+        progressBar.setProgress(0);
+        progressText.setText("Текст: 0 из " + files.size());
+        cancelButton.setDisable(false);
+
+        worker = new Thread(() -> {
+            try {
+                // 1. Текст из файлов; между файлами можно отменить
+                List<ConceptGraphPipeline.DocumentInput> documents = new ArrayList<>();
+                TikaParserEngine parser = new TikaParserEngine();
+                for (int i = 0; i < files.size(); i++) {
+                    if (cancelled.get()) {
+                        finish("Анализ отменён", 0);
+                        return;
+                    }
+                    File file = files.get(i);
+                    String text = parser.extractText(file);
+                    documents.add(new ConceptGraphPipeline.DocumentInput(
+                            file.getName(), file.getAbsolutePath(), file.length(), text));
+                    int done = i + 1;
+                    Platform.runLater(() -> {
+                        progressBar.setProgress(done / (double) files.size() * 0.3);
+                        progressText.setText("Текст: " + done + " из " + files.size());
+                    });
+                }
+                log("Текст извлечён: " + documents.size() + " док.");
+
+                // 2. Понятия, типы, БД и связи
+                Platform.runLater(() -> {
+                    progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+                    progressText.setText("Поиск понятий и связей…");
+                });
+                ConceptGraphPipeline pipeline = new ConceptGraphPipeline(
+                        new OpenNlpEngine(),
+                        new AiGraphEngine(),
+                        new AppExceptionHandler(),
+                        this::log
+                ).withMeaningSource(useWikipedia ? new WikipediaMeaningSource() : null);
+                ConceptGraphPipeline.Result result = pipeline.processAll(documents);
+                GraphView.Layout layout = GraphView.computeLayout(result.nodes(), result.frequency(), result.edges());
+
+                if (cancelled.get()) {
+                    finish("Анализ отменён", 0);
+                    return;
+                }
+                double seconds = (System.currentTimeMillis() - started) / 1000.0;
+                Platform.runLater(() -> showResult(result, layout));
+                finish(String.format(Locale.forLanguageTag("ru"), "Готово · %d док. за %.1f с", documents.size(), seconds), 1);
+            } catch (Throwable e) {
+                log("[Ошибка]: " + e.getMessage());
+                finish("Ошибка: " + e.getMessage(), 0);
+            }
+        }, "analysis");
+        worker.setDaemon(true); // не держим приложение открытым после закрытия окна
+        updateButtons();
+        worker.start();
+    }
+
+    private void log(String line) {
+        Platform.runLater(() -> {
+            logArea.appendText(line + "\n");
+            if (progressBar.getProgress() < 0) {
+                progressText.setText(line.length() > 60 ? line.substring(0, 57) + "…" : line);
+            }
+        });
+    }
+
+    private void finish(String status, double progress) {
+        Platform.runLater(() -> {
+            worker = null;
+            progressBar.setProgress(progress);
+            progressText.setText(status);
+            cancelButton.setDisable(true);
+            updateButtons();
+        });
+    }
+
+    private void showResult(ConceptGraphPipeline.Result result, GraphView.Layout layout) {
+        lastResult = result;
+        conceptsById.clear();
+        for (ConceptEntity c : result.nodes()) {
+            conceptsById.put(c.id(), c);
+        }
+        Map<EntityType, Integer> byType = new EnumMap<>(EntityType.class);
+        for (ConceptEntity c : result.nodes()) {
+            byType.merge(c.type(), 1, Integer::sum);
+        }
+        typeChips.forEach((type, chip) -> chip.setText(GraphView.typeName(type) + "  " + byType.getOrDefault(type, 0)));
+
+        int laidOut = layout.nodes().size();
+        topSlider.setMax(Math.max(5, laidOut));
+        topSlider.setValue(Math.min(50, Math.max(5, laidOut)));
+        graphView.setTopN((int) topSlider.getValue());
+
+        graphView.setResult(layout, result.frequency(), result.edges());
+        resultTabs.show(result);
+        setStatus(dbDot, dbText, result.savedToDb() ? "ok" : "bad",
+                result.savedToDb() ? "БД: сохранено" : "БД недоступна",
+                result.savedToDb() ? "Результаты сохранены в PostgreSQL" : "Граф строится без сохранения, ID локальные");
+        selectConcept(null);
+    }
+
+    // ---------------- выбор понятия ----------------
+
+    /** Общая точка выбора: из графа, таблицы или карточки */
+    private void selectConcept(Long id) {
+        graphView.select(id);
+        resultTabs.selectConcept(id);
+        showCard(id == null ? null : conceptsById.get(id));
+    }
+
+    private void showCard(ConceptEntity concept) {
+        card.getChildren().clear();
+        Label section = new Label("ПОНЯТИЕ");
+        section.getStyleClass().add("section-label");
+        card.getChildren().add(section);
+        if (concept == null) {
+            Label empty = new Label("Кликните по узлу графа или по строке во вкладке «Понятия».");
+            empty.getStyleClass().add("card-empty");
+            empty.setWrapText(true);
+            card.getChildren().add(empty);
+            return;
+        }
+
+        Label title = new Label(concept.value());
+        title.getStyleClass().add("concept-title");
+        title.setWrapText(true);
+        Label badge = new Label(GraphView.typeName(concept.type()));
+        badge.getStyleClass().add("type-badge");
+        badge.setStyle("-fx-background-color: " + toCss(theme.typeColor(concept.type())) + ";");
+        HBox head = new HBox(8, title, badge);
+        head.setAlignment(Pos.CENTER_LEFT);
+
+        // все связи понятия, сильные сверху
+        List<Edge> links = new ArrayList<>();
+        for (Edge e : lastResult.edges()) {
+            if (concept.id().equals(e.sourceConceptId()) || concept.id().equals(e.targetConceptId())) {
+                links.add(e);
+            }
+        }
+        links.sort((a, b) -> Double.compare(b.weight(), a.weight()));
+
+        GridPane kv = new GridPane();
+        kv.setHgap(10);
+        kv.setVgap(3);
+        addRow(kv, 0, lastResult.savedToDb() ? "ID в БД" : "Локальный ID", String.valueOf(concept.id()));
+        addRow(kv, 1, "Вхождений", String.valueOf(lastResult.frequency().getOrDefault(concept.id(), 0)));
+        addRow(kv, 2, "Первое вхождение", "символы " + concept.startChar() + "–" + concept.endChar());
+
+        Label linksLabel = new Label("СВЯЗИ · " + links.size());
+        linksLabel.getStyleClass().add("section-label");
+
+        VBox linkRows = new VBox(3);
+        for (Edge e : links) {
+            Long otherId = concept.id().equals(e.sourceConceptId()) ? e.targetConceptId() : e.sourceConceptId();
+            ConceptEntity other = conceptsById.get(otherId);
+            if (other == null) {
+                continue;
+            }
+            Hyperlink link = new Hyperlink(other.value());
+            link.setOnAction(ev -> selectConcept(other.id()));
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            Label w = new Label(String.format(Locale.ROOT, "%.2f", e.weight()));
+            w.getStyleClass().add("link-weight");
+            HBox row = new HBox(6, new Circle(4, theme.typeColor(other.type())), link);
+            if (e.label() != null && !e.label().isBlank() && !e.label().equalsIgnoreCase("связан")) {
+                Label rel = new Label(e.label());
+                rel.getStyleClass().add("card-key");
+                row.getChildren().add(rel);
+            }
+            row.getChildren().addAll(gap, w);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.getStyleClass().add("link-row");
+            linkRows.getChildren().add(row);
+        }
+        if (links.isEmpty()) {
+            Label none = new Label("Связей нет");
+            none.getStyleClass().add("card-empty");
+            linkRows.getChildren().add(none);
+        }
+        ScrollPane scroll = new ScrollPane(linkRows);
+        scroll.setFitToWidth(true);
+        scroll.setPrefViewportHeight(Math.min(130, Math.max(20, links.size() * 22)));
+        scroll.getStyleClass().add("links-scroll");
+
+        card.getChildren().addAll(head, kv, linksLabel, scroll);
+    }
+
+    private static void addRow(GridPane grid, int row, String key, String value) {
+        Label k = new Label(key);
+        k.getStyleClass().add("card-key");
+        Label v = new Label(value);
+        v.getStyleClass().add("card-value");
+        v.setWrapText(true);
+        grid.addRow(row, k, v);
+    }
+
+    // ---------------- сервисы и прочее ----------------
+
+    /** Проверяет БД и Ollama в фоне, чтобы окно открылось сразу */
+    private void checkServices() {
+        Thread checker = new Thread(() -> {
+            boolean ollama = false;
+            try {
+                ollama = new AiGraphEngine().isAvailable();
+            } catch (Throwable ignored) {
+                // считаем, что Ollama нет
+            }
+            boolean ollamaOk = ollama;
+            Platform.runLater(() -> setStatus(ollamaDot, ollamaText, ollamaOk ? "ok" : "warn",
+                    ollamaOk ? "Ollama на связи" : "Ollama не отвечает",
+                    ollamaOk ? "Типы и связи уточняет модель Ollama"
+                            : "Типы берутся из словарей, связи — по общим предложениям"));
+
+            boolean db = false;
+            try (Connection ignored = ConnectionPool.getConnection()) {
+                db = true;
+            } catch (Throwable ignored) {
+                // база не настроена или не запущена
+            }
+            boolean dbOk = db;
+            Platform.runLater(() -> {
+                if (lastResult == null) {
+                    setStatus(dbDot, dbText, dbOk ? "ok" : "bad",
+                            dbOk ? "БД подключена" : "БД недоступна",
+                            dbOk ? "Результаты сохраняются в PostgreSQL" : "Граф строится без сохранения, ID локальные");
+                }
+            });
+        }, "service-check");
+        checker.setDaemon(true);
+        checker.start();
+    }
+
+    private static void setStatus(Circle dot, Label text, String state, String message, String details) {
+        dot.getStyleClass().removeAll("ok", "warn", "bad");
+        dot.getStyleClass().add(state);
+        text.setText(message);
+        text.setTooltip(new Tooltip(details));
+    }
+
+    private void savePng(Button owner) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Сохранить граф");
+        chooser.setInitialFileName("граф.png");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG", "*.png"));
+        File file = chooser.showSaveDialog(owner.getScene().getWindow());
+        if (file == null) {
+            return;
+        }
+        try {
+            graphView.saveSnapshot(file);
+            progressText.setText("Граф сохранён: " + file.getName());
+        } catch (Exception e) {
+            progressText.setText("Не удалось сохранить PNG: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Цвета холста берём из window.css: подставляем имя цвета в фон скрытого элемента и читаем результат.
+     * Так все цвета окна живут в одном файле.
+     */
+    private static GraphView.Theme readTheme(BorderPane root) {
+        Map<EntityType, Color> types = new EnumMap<>(EntityType.class);
+        types.put(EntityType.PERSON, themeColor(root, "cg-type-person"));
+        types.put(EntityType.GEOGRAPHY, themeColor(root, "cg-type-geography"));
+        types.put(EntityType.TECHNOLOGY, themeColor(root, "cg-type-technology"));
+        types.put(EntityType.PRODUCT, themeColor(root, "cg-type-product"));
+        return new GraphView.Theme(
+                themeColor(root, "cg-canvas-bg"),
+                themeColor(root, "cg-edge-color"),
+                themeColor(root, "cg-accent"),
+                themeColor(root, "cg-text"),
+                types);
+    }
+
+    private static Color themeColor(BorderPane root, String name) {
+        Region probe = new Region();
+        probe.setManaged(false);
+        probe.setVisible(false);
+        probe.setStyle("-fx-background-color: " + name + ";");
+        root.getChildren().add(probe);
+        probe.applyCss();
+        root.getChildren().remove(probe);
+        Background bg = probe.getBackground();
+        if (bg != null && !bg.getFills().isEmpty()) {
+            Paint paint = bg.getFills().get(0).getFill();
+            if (paint instanceof Color color) {
+                return color;
+            }
+        }
+        return Color.GRAY;
+    }
+
+    private static String toCss(Color c) {
+        return String.format("#%02X%02X%02X", (int) Math.round(c.getRed() * 255),
+                (int) Math.round(c.getGreen() * 255), (int) Math.round(c.getBlue() * 255));
     }
 
     public static void main(String[] args) {
