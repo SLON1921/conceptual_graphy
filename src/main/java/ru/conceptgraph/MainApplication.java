@@ -10,8 +10,12 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuBar;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Slider;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
@@ -21,6 +25,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.BorderPane;
@@ -37,6 +42,7 @@ import javafx.scene.shape.Circle;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 
 import ru.conceptgraph.core.config.AppConfig;
 import ru.conceptgraph.core.preloader.SystemPreloader;
@@ -54,7 +60,11 @@ import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
 import ru.conceptgraph.shared.EntityType;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -95,6 +105,14 @@ public class MainApplication extends Application {
     private ResultTabs resultTabs;
     private TextArea logArea;
     private VBox card;
+
+    private TextField pathField;
+    private final DirectoryChooser folderChooser = new DirectoryChooser();
+    private MenuItem analyzeFolderItem;
+    private MenuItem analyzeFileItem;
+    private MenuItem cancelItem;
+    private MenuItem savePngItem;
+    private MenuItem exportCsvItem;
 
     private Button folderButton;
     private Button fileButton;
@@ -141,7 +159,7 @@ public class MainApplication extends Application {
         scene.getStylesheets().add(MainApplication.class.getResource(WINDOW_CSS).toExternalForm());
         theme = readTheme(root);
 
-        root.setTop(buildTopBar(stage));
+        root.setTop(new VBox(buildMenuBar(stage), buildTopBar(stage)));
         root.setCenter(buildBody());
         root.setBottom(buildStatusBar());
 
@@ -153,16 +171,68 @@ public class MainApplication extends Application {
         Platform.setImplicitExit(true);
 
         showCard(null);
+        updateButtons();
         checkServices();
     }
 
     // ---------------- разметка ----------------
 
+    /** Меню окна: те же действия, что и кнопки, плюс экспорт понятий в CSV */
+    private MenuBar buildMenuBar(Stage stage) {
+        MenuItem openItem = new MenuItem("Открыть папку…");
+        openItem.setAccelerator(KeyCombination.keyCombination("Shortcut+O"));
+        openItem.setOnAction(e -> chooseFolder(stage));
+
+        savePngItem = new MenuItem("Сохранить граф в PNG…");
+        savePngItem.setAccelerator(KeyCombination.keyCombination("Shortcut+S"));
+        savePngItem.setOnAction(e -> savePng(stage));
+
+        exportCsvItem = new MenuItem("Экспорт понятий в CSV…");
+        exportCsvItem.setAccelerator(KeyCombination.keyCombination("Shortcut+E"));
+        exportCsvItem.setOnAction(e -> exportCsv(stage));
+
+        MenuItem exitItem = new MenuItem("Выход");
+        exitItem.setAccelerator(KeyCombination.keyCombination("Shortcut+Q"));
+        exitItem.setOnAction(e -> Platform.exit());
+
+        Menu fileMenu = new Menu("Файл", null,
+                openItem, new SeparatorMenuItem(), savePngItem, exportCsvItem, new SeparatorMenuItem(), exitItem);
+
+        analyzeFolderItem = new MenuItem("Анализ папки");
+        analyzeFolderItem.setAccelerator(KeyCombination.keyCombination("F5"));
+        analyzeFolderItem.setOnAction(e -> analyzeFolder());
+
+        analyzeFileItem = new MenuItem("Анализ файла");
+        analyzeFileItem.setAccelerator(KeyCombination.keyCombination("Shortcut+F5"));
+        analyzeFileItem.setOnAction(e -> analyzeFile());
+
+        cancelItem = new MenuItem("Отменить анализ");
+        cancelItem.setOnAction(e -> cancelButton.fire());
+
+        Menu analysisMenu = new Menu("Анализ", null, analyzeFolderItem, analyzeFileItem, cancelItem);
+
+        MenuItem resetViewItem = new MenuItem("Сбросить вид графа");
+        resetViewItem.setAccelerator(KeyCombination.keyCombination("Shortcut+0"));
+        resetViewItem.setOnAction(e -> graphView.resetView());
+        Menu viewMenu = new Menu("Вид", null, resetViewItem);
+
+        return new MenuBar(fileMenu, analysisMenu, viewMenu);
+    }
+
+    private void chooseFolder(Window owner) {
+        File folder = folderChooser.showDialog(owner);
+        if (folder != null) {
+            folderChooser.setInitialDirectory(folder.getParentFile());
+            pathField.setText(folder.getAbsolutePath());
+            openFolder(folder);
+        }
+    }
+
     private HBox buildTopBar(Stage stage) {
         Label brand = new Label("Понятийный граф");
         brand.getStyleClass().add("brand");
 
-        TextField pathField = new TextField();
+        pathField = new TextField();
         pathField.setPromptText("Папка с документами не выбрана");
         pathField.setEditable(false);
         pathField.setFocusTraversable(false);
@@ -170,15 +240,7 @@ public class MainApplication extends Application {
         HBox.setHgrow(pathField, Priority.ALWAYS);
 
         Button openButton = new Button("Открыть папку…");
-        DirectoryChooser chooser = new DirectoryChooser();
-        openButton.setOnAction(e -> {
-            File folder = chooser.showDialog(stage);
-            if (folder != null) {
-                chooser.setInitialDirectory(folder.getParentFile());
-                pathField.setText(folder.getAbsolutePath());
-                openFolder(folder);
-            }
-        });
+        openButton.setOnAction(e -> chooseFolder(stage));
 
         HBox bar = new HBox(brand, pathField, openButton);
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -256,7 +318,7 @@ public class MainApplication extends Application {
         StackPane.setMargin(hint, new Insets(8, 10, 8, 10));
 
         Button savePng = new Button("Сохранить PNG");
-        savePng.setOnAction(e -> savePng(savePng));
+        savePng.setOnAction(e -> savePng(savePng.getScene().getWindow()));
         StackPane.setAlignment(savePng, Pos.BOTTOM_RIGHT);
         StackPane.setMargin(savePng, new Insets(8, 10, 8, 10));
 
@@ -535,6 +597,11 @@ public class MainApplication extends Application {
         boolean busy = worker != null;
         folderButton.setDisable(busy || currentFolder == null);
         fileButton.setDisable(busy || selectedFile == null);
+        analyzeFolderItem.setDisable(folderButton.isDisable());
+        analyzeFileItem.setDisable(fileButton.isDisable());
+        cancelItem.setDisable(!busy);
+        savePngItem.setDisable(lastResult == null);
+        exportCsvItem.setDisable(lastResult == null);
     }
 
     private void runAnalysis(String title, List<File> files) {
@@ -786,12 +853,12 @@ public class MainApplication extends Application {
         text.setTooltip(new Tooltip(details));
     }
 
-    private void savePng(Button owner) {
+    private void savePng(Window owner) {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Сохранить граф");
         chooser.setInitialFileName("граф.png");
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG", "*.png"));
-        File file = chooser.showSaveDialog(owner.getScene().getWindow());
+        File file = chooser.showSaveDialog(owner);
         if (file == null) {
             return;
         }
@@ -801,6 +868,47 @@ public class MainApplication extends Application {
         } catch (Exception e) {
             progressText.setText("Не удалось сохранить PNG: " + e.getMessage());
         }
+    }
+
+    /**
+     * Понятия последнего анализа в CSV: id, понятие, тип, вхождения.
+     * Разделитель «;» и BOM в начале, чтобы Excel сразу открыл кириллицу по столбцам.
+     */
+    private void exportCsv(Window owner) {
+        if (lastResult == null) {
+            return;
+        }
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Экспорт понятий");
+        chooser.setInitialFileName("понятия.csv");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV", "*.csv"));
+        File file = chooser.showSaveDialog(owner);
+        if (file == null) {
+            return;
+        }
+        List<ConceptEntity> nodes = new ArrayList<>(lastResult.nodes());
+        Map<Long, Integer> frequency = lastResult.frequency();
+        nodes.sort((a, b) -> Integer.compare(frequency.getOrDefault(b.id(), 0), frequency.getOrDefault(a.id(), 0)));
+        try (BufferedWriter out = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
+            out.write('\uFEFF');
+            out.write("id;понятие;тип;вхождений");
+            out.newLine();
+            for (ConceptEntity c : nodes) {
+                out.write(c.id() + ";" + csvCell(c.value()) + ";" + GraphView.typeName(c.type()) + ";"
+                        + frequency.getOrDefault(c.id(), 0));
+                out.newLine();
+            }
+            progressText.setText("Понятия сохранены: " + file.getName() + " (" + nodes.size() + ")");
+        } catch (IOException e) {
+            progressText.setText("Не удалось сохранить CSV: " + e.getMessage());
+        }
+    }
+
+    private static String csvCell(String text) {
+        if (text.contains(";") || text.contains("\"") || text.contains("\n")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
     }
 
     /**
