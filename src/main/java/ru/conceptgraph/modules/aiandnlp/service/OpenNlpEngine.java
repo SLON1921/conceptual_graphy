@@ -103,6 +103,45 @@ public class OpenNlpEngine {
         return concepts;
     }
 
+    /** Предел длины контекста для Ollama, чтобы не упираться в окно модели на длинных абзацах */
+    private static final int MAX_SENTENCE_LENGTH = 400;
+
+    /**
+     * Возвращает предложение, в котором стоит слово с позициями [startChar, endChar).
+     * Границы предложения: точка, ! ? или перевод строки. Длинные куски обрезаются вокруг слова.
+     * Нужен, чтобы отправлять в Ollama контекст слова, а не весь документ.
+     */
+    public static String sentenceAround(String text, int startChar, int endChar) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        int start = Math.max(0, Math.min(startChar, text.length()));
+        int end = Math.max(start, Math.min(endChar, text.length()));
+
+        int from = start;
+        while (from > 0 && !isSentenceBoundary(text.charAt(from - 1))) {
+            from--;
+        }
+        int to = end;
+        while (to < text.length() && !isSentenceBoundary(text.charAt(to))) {
+            to++;
+        }
+        if (to < text.length()) {
+            to++; // захватываем сам знак конца предложения
+        }
+
+        if (to - from > MAX_SENTENCE_LENGTH) {
+            int half = MAX_SENTENCE_LENGTH / 2;
+            from = Math.max(from, start - half);
+            to = Math.min(to, end + half);
+        }
+        return text.substring(from, to).replaceAll("\\s+", " ").trim();
+    }
+
+    private static boolean isSentenceBoundary(char c) {
+        return c == '.' || c == '!' || c == '?' || c == '\n' || c == '\r';
+    }
+
     /**
      * Эвристический метод для базовой нормализации окончаний русских существительных.
      * Помогает объединить "фильме" -> "фильм", "монстров" -> "монстр".
