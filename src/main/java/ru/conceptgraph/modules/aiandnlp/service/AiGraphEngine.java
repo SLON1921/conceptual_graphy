@@ -2,28 +2,56 @@ package ru.conceptgraph.modules.aiandnlp.service;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.jspecify.annotations.NonNull;
 import ru.conceptgraph.core.errors.AiException;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
 import ru.conceptgraph.shared.EntityType;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 public class AiGraphEngine {
 
     private final HttpClient httpClient;
 
+    /** Адрес Ollama и модель берутся из application.properties (ollama.url, ollama.model) */
+    private final String ollamaUrl;
+    private final String modelName;
+
     public AiGraphEngine() {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+
+        Properties settings = loadSettings();
+        String url = settings.getProperty("ollama.url", "http://localhost:11434").trim();
+        this.ollamaUrl = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+        this.modelName = settings.getProperty("ollama.model", "llama3").trim();
+    }
+
+    /**
+     * Читает application.properties напрямую: AppConfig хранит только настройки БД
+     * и проверяет их как обязательные, а для Ollama достаточно значений по умолчанию.
+     */
+    private static Properties loadSettings() {
+        Properties properties = new Properties();
+        try (InputStream in = AiGraphEngine.class.getClassLoader().getResourceAsStream("application.properties")) {
+            if (in != null) {
+                properties.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+            }
+        } catch (Exception e) {
+            System.err.println("[Ollama] Не удалось прочитать application.properties: " + e.getMessage());
+        }
+        return properties;
     }
 
     /**
@@ -34,7 +62,7 @@ public class AiGraphEngine {
     public boolean isAvailable() {
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:11434/api/tags"))
+                    .uri(URI.create(ollamaUrl + "/api/tags"))
                     .timeout(Duration.ofSeconds(2))
                     .GET()
                     .build();
@@ -534,7 +562,7 @@ public class AiGraphEngine {
     }
 
 
-    private static @NonNull String getNumericWeight(
+    private static String getNumericWeight(
             int secondColon,
             String cleanLine,
             int firstColon
@@ -587,10 +615,6 @@ public class AiGraphEngine {
                 .replace("\r", "\\r");
 
 
-        String modelName =
-                "llama3";
-
-
         String jsonRequestBody =
                 "{\"model\": \""
                         + modelName
@@ -605,7 +629,7 @@ public class AiGraphEngine {
                     HttpRequest.newBuilder()
                             .uri(
                                     URI.create(
-                                            "http://localhost:11434/api/generate"
+                                            ollamaUrl + "/api/generate"
                                     )
                             )
                             .header(
