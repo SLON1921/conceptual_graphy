@@ -32,7 +32,7 @@ public class MainApplication {
         System.out.println("   КОНСОЛЬНЫЙ ЯДРОВОЙ КОНВЕЙЕР CONCEPTER-GRAPH   ");
         System.out.println("                                                    ");
 
-        // инициализируем синтаксический движок и ИИ-движок (Ollama API) мишанька пупс постарался
+        // инициализируем синтаксический движок и ИИ-движок (Ollama API)
         OpenNlpEngine nlpEngine = new OpenNlpEngine();
         AiGraphEngine aiEngine = new AiGraphEngine();
         ConceptGraphPipeline pipeline = new ConceptGraphPipeline(
