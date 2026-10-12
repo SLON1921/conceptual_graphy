@@ -1,5 +1,7 @@
 package ru.conceptgraph;
 
+import java.util.ArrayList;
+
 import ru.conceptgraph.core.config.AppConfig;
 import ru.conceptgraph.core.errors.AppExceptionHandler;
 import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
@@ -11,17 +13,32 @@ import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
 
+//временно до нормального main
+import javafx.stage.Stage;
+
+import javafx.application.Application;
 import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class MainApplication {
-
+public class MainApplication extends Application{
+    @Override
+    public void start(Stage primaryStage) throws Exception {
+        // Пустая заглушка для компилятора Java, чтобы удовлетворить контракт абстрактного класса Application.
+        // Пока мы не перенесли сюда UI, этот метод просто ничего не делает.
+    }
     /** Папка по умолчанию, если путь не передан аргументом запуска */
     private static final String DEFAULT_INPUT_DIR = "data/input";
 
     public static void main(String[] args) {
+        // 1. Регистрируем наш SystemPreloader в системе JavaFX
+        System.setProperty("javafx.preloader", "ru.conceptgraph.core.preloader.SystemPreloader");
+
+        // 2. Инициализируем поток JavaFX. В фоновом режиме запустятся проверки прелоадера.
+        // Метод launch(args) заблокирует дальнейшее выполнение текущего main, пока работает графика
+        new Thread(() -> Application.launch(MainApplication.class, args)).start();
+
         // Кастомный перехватчик(если не обернуть в try-catch, то ошибка передастся сюда)
         Thread.setDefaultUncaughtExceptionHandler(new AppExceptionHandler());
         AppExceptionHandler exceptionHandler = new AppExceptionHandler();
@@ -32,7 +49,7 @@ public class MainApplication {
         System.out.println("   КОНСОЛЬНЫЙ ЯДРОВОЙ КОНВЕЙЕР CONCEPTER-GRAPH   ");
         System.out.println("                                                    ");
 
-        // инициализируем синтаксический движок и ИИ-движок (Ollama API)
+        // инициализируем синтаксический движок и ИИ-движок (Ollama API) мишанька пупс постарался
         OpenNlpEngine nlpEngine = new OpenNlpEngine();
         AiGraphEngine aiEngine = new AiGraphEngine();
         ConceptGraphPipeline pipeline = new ConceptGraphPipeline(
@@ -40,6 +57,8 @@ public class MainApplication {
 
         // Подключаем парсер ромки вместо заглушки и передаем его в сканер папок
         TikaParserEngine tikaParser = new TikaParserEngine();
+
+// Передаем его в сканер папок
         FolderScanner scanner = new FolderScanner(tikaParser);
 
         // Путь к папке берём из первого аргумента: java ... MainApplication "C:\docs"
