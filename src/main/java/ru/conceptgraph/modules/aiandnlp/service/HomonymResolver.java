@@ -2,6 +2,8 @@ package ru.conceptgraph.modules.aiandnlp.service;
 
 import ru.conceptgraph.shared.EntityType;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -14,8 +16,22 @@ import java.util.Set;
  */
 public class HomonymResolver {
 
-    /** Один вариант значения: заголовок статьи («Сходня (река)») и её первые абзацы */
-    public record Meaning(String title, String snippet) {
+    /**
+     * Один вариант значения.
+     *
+     * @param title   заголовок статьи («Сходня (река)»)
+     * @param snippet первые предложения статьи
+     * @param length  объём статьи в символах — мера популярности (0, если неизвестно)
+     */
+    public record Meaning(String title, String snippet, int length) {
+        public Meaning(String title, String snippet) {
+            this(title, snippet, 0);
+        }
+
+        public String url() {
+            return "https://ru.wikipedia.org/wiki/"
+                    + URLEncoder.encode(title.replace(' ', '_'), StandardCharsets.UTF_8).replace("%2F", "/");
+        }
     }
 
     /** Выбранное значение и его оценка (сколько общих слов с предложением) */
@@ -29,8 +45,9 @@ public class HomonymResolver {
 
     /**
      * @param sentence   предложение, где стоит слово (OpenNlpEngine.sentenceAround)
-     * @param candidates варианты в порядке популярности (первый — самый частый)
-     * @return лучший вариант; при равном score — более популярный; null, если вариантов нет
+     * @param candidates варианты в порядке поиска Википедии
+     * @return лучший вариант; при равном score — более популярный (длиннее статья,
+     *         при равной длине — раньше в поиске); null, если вариантов нет
      */
     public Choice choose(String sentence, List<Meaning> candidates) {
         if (candidates == null || candidates.isEmpty()) {
@@ -43,7 +60,10 @@ public class HomonymResolver {
             Set<String> words = stems(candidate.title() + " " + candidate.snippet());
             words.retainAll(context); // остаются только общие с предложением слова
             int score = words.size();
-            if (best == null || score > best.score()) { // строго больше: при равенстве остаётся более популярный
+            boolean better = best == null
+                    || score > best.score()
+                    || (score == best.score() && candidate.length() > best.meaning().length());
+            if (better) {
                 best = new Choice(candidate, score);
             }
         }

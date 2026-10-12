@@ -31,7 +31,9 @@ public class WikipediaMeaningSource implements MeaningSource {
 
     private static final String API = "https://ru.wikipedia.org/w/api.php"
             + "?action=query&format=json&generator=search&gsrlimit=6"
-            + "&prop=extracts&exintro=1&explaintext=1&exsentences=2&exlimit=max&gsrsearch=";
+            + "&prop=extracts|info&exintro=1&explaintext=1&exsentences=2&exlimit=max&gsrsearch=";
+    private static final String LINKS_API = "https://ru.wikipedia.org/w/api.php"
+            + "?action=query&format=json&prop=links&pllimit=max&titles=";
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -52,24 +54,56 @@ public class WikipediaMeaningSource implements MeaningSource {
         return available;
     }
 
+    /**
+     * Число внутренних ссылок статьи (одна страница ответа API, до 500 ссылок —
+     * как и в WikipediaClient). Нужно только для заполнения wiki_cache.
+     */
+    @Override
+    public int countLinks(String title) {
+        String body = get(LINKS_API + URLEncoder.encode(title, StandardCharsets.UTF_8), title);
+        if (body == null) {
+            return 0;
+        }
+        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        if (!root.has("query") || !root.getAsJsonObject("query").has("pages")) {
+            return 0;
+        }
+        for (Map.Entry<String, JsonElement> page : root.getAsJsonObject("query").getAsJsonObject("pages").entrySet()) {
+            JsonObject data = page.getValue().getAsJsonObject();
+            if (data.has("links")) {
+                return data.getAsJsonArray("links").size();
+            }
+        }
+        return 0;
+    }
+
     private List<HomonymResolver.Meaning> request(String word) {
+        String body = get(API + URLEncoder.encode(word.trim(), StandardCharsets.UTF_8), word);
+        return body == null ? List.of() : parse(body);
+    }
+
+    /** GET-запрос к API; null при ошибке. После сетевой ошибки источник выключается */
+    private String get(String url, String what) {
+        if (!available) {
+            return null;
+        }
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(API + URLEncoder.encode(word.trim(), StandardCharsets.UTF_8)))
+                    .uri(URI.create(url))
                     .header("User-Agent", "ConceptGraphBot/1.0 (student project)")
                     .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
-                System.err.println("[Wikipedia] HTTP " + response.statusCode() + " для '" + word + "'");
-                return List.of();
+                System.err.println("[Wikipedia] HTTP " + response.statusCode() + " для '" + what + "'");
+                return null;
             }
-            return parse(response.body());
+            return response.body();
         } catch (Exception e) {
             available = false;
-            System.err.println("[Wikipedia] недоступна, омонимы дальше не проверяются: " + e.getMessage());
-            return List.of();
+            System.err.println("[Wikipedia] недоступна, дальше не опрашивается: " + e.getMessage());
+            return null;
         }
     }
 
@@ -91,8 +125,9 @@ public class WikipediaMeaningSource implements MeaningSource {
         for (JsonObject page : sorted) {
             String title = page.has("title") ? page.get("title").getAsString() : "";
             String extract = page.has("extract") ? page.get("extract").getAsString() : "";
+            int length = page.has("length") ? page.get("length").getAsInt() : 0;
             if (!title.isBlank()) {
-                result.add(new HomonymResolver.Meaning(title, extract));
+                result.add(new HomonymResolver.Meaning(title, extract, length));
             }
         }
         return result;
