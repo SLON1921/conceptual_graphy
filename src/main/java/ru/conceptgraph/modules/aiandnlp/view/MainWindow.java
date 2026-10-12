@@ -15,16 +15,24 @@ import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 
+import ru.conceptgraph.core.config.AppConfig;
+import ru.conceptgraph.core.errors.AppExceptionHandler;
+import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
 import ru.conceptgraph.modules.aiandnlp.service.FolderScanner;
+import ru.conceptgraph.modules.aiandnlp.service.WikipediaMeaningSource;
 import ru.conceptgraph.modules.aiandnlp.service.OpenNlpEngine;
 import ru.conceptgraph.modules.aiandnlp.service.AiGraphEngine;
+import ru.conceptgraph.modules.aiandnlp.service.SupportedFormats;
 import ru.conceptgraph.modules.infrastructure.service.TikaParserEngine;
 import ru.conceptgraph.shared.ConceptEntity;
+import ru.conceptgraph.shared.Document;
 import ru.conceptgraph.shared.Edge;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MainWindow extends Application {
 
@@ -55,6 +63,14 @@ public class MainWindow extends Application {
 
     @Override
     public void start(Stage primaryStage) {
+        // Настройки БД из application.properties: без этого пул соединений не стартует.
+        // Если файла нет, окно всё равно открываем — граф построится без сохранения в БД.
+        try {
+            AppConfig.loadProperties();
+        } catch (RuntimeException e) {
+            System.err.println("[CONFIG] " + e.getMessage());
+        }
+
         primaryStage.setTitle("Concepter Graph OS - Enterprise Split & Navigation Engine");
 
         // --- ШАПКА ПРИЛОЖЕНИЯ ---
@@ -117,6 +133,18 @@ public class MainWindow extends Application {
         runButton.setMaxWidth(Double.MAX_VALUE);
         runButton.setDisable(true);
         runButton.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-background-color: #66FCF1; -fx-text-fill: #0B0C10; -fx-padding: 12; -fx-background-radius: 6; -fx-cursor: hand;");
+        HBox.setHgrow(runButton, Priority.ALWAYS);
+
+        // По заданию анализируется вся папка: все поддерживаемые файлы, включая вложенные папки
+        Button folderButton = new Button("📚 ВСЯ ПАПКА");
+        folderButton.setDisable(true);
+        folderButton.setStyle(btnStyle + " -fx-font-size: 14px; -fx-padding: 12 20;");
+
+        CheckBox wikiCheckBox = new CheckBox("Омонимы через Википедию");
+        wikiCheckBox.setStyle("-fx-text-fill: #8892B0; -fx-font-weight: bold;");
+
+        HBox runBar = new HBox(10, runButton, folderButton, wikiCheckBox);
+        runBar.setAlignment(Pos.CENTER_LEFT);
 
         // Панели управления слайдерами
         Label weightLabel = new Label("Порог веса связи (Мин: 0.20):");
@@ -159,11 +187,14 @@ public class MainWindow extends Application {
         logArea.setEditable(false);
         logArea.setStyle("-fx-control-inner-background: #1F2833; -fx-text-fill: #C5C6C7; -fx-font-family: 'Consolas'; -fx-border-color: #45A29E;");
 
+        // Справа вкладки из плана: Лог, Документы, Понятия, Даты, Ошибки, Статистика
+        ResultTabs resultTabs = new ResultTabs(logArea);
+
         // Добавляем элементы в сплит-панель и выставляем стартовые пропорции 40% на 60%
-        splitPane.getItems().addAll(canvasContainer, logArea);
+        splitPane.getItems().addAll(canvasContainer, resultTabs.getPane());
         splitPane.setDividerPositions(0.40);
 
-        centerLayout.getChildren().addAll(runButton, controlsPane, splitPane);
+        centerLayout.getChildren().addAll(runBar, controlsPane, splitPane);
 
         HBox bodyLayout = new HBox();
         bodyLayout.getChildren().addAll(sidebar, centerLayout);
@@ -205,7 +236,7 @@ public class MainWindow extends Application {
             lastMouseX = e.getX();
             lastMouseY = e.getY();
 
-            // ФИЧА МИШИ: Если зажато КОЛЁСИКО мыши (или ЛКМ + КЛАВИША SHORTCUT) — двигаем холст (панорамирование)
+            // Если зажато КОЛЁСИКО мыши (или ЛКМ + КЛАВИША SHORTCUT) — двигаем холст (панорамирование)
             if (e.getButton() == MouseButton.MIDDLE || e.isControlDown()) {
                 graphTranslateX += deltaX;
                 graphTranslateY += deltaY;
@@ -226,7 +257,8 @@ public class MainWindow extends Application {
                 TreeItem<File> rootItem = createTreeNodes(selectedFolder);
                 rootItem.setExpanded(true);
                 fileTreeView.setRoot(rootItem);
-                logArea.setText("[Система]: Директория загружена. Выберите файл в дереве.");
+                folderButton.setDisable(false);
+                logArea.setText("[Система]: Директория загружена. Выберите файл в дереве или нажмите «Вся папка».");
             }
         });
 
@@ -239,73 +271,54 @@ public class MainWindow extends Application {
                 runButton.setDisable(true);
             }
         });
-        runButton.setOnAction(event -> {
-            if (selectedFileFromTree == null) return;
-
+        // Общий запуск анализа: loader в фоновом потоке готовит документы, конвейер их обрабатывает
+        AnalysisLauncher launcher = (title, loader) -> {
             logArea.clear();
             logArea.appendText("=================================================================\n");
-            logArea.appendText(" 🪐 СИНТЕЗ КИБЕР-ГРАФА: " + selectedFileFromTree.getName().toUpperCase() + "\n");
+            logArea.appendText(" 🪐 СИНТЕЗ КИБЕР-ГРАФА: " + title.toUpperCase() + "\n");
             logArea.appendText("=================================================================\n");
 
-            new Thread(() -> {
+            runButton.setDisable(true);
+            folderButton.setDisable(true);
+            boolean useWikipedia = wikiCheckBox.isSelected();
+
+            Thread worker = new Thread(() -> {
                 try {
-                    TikaParserEngine tikaParser = new TikaParserEngine();
-                    OpenNlpEngine nlpEngine = new OpenNlpEngine();
-                    AiGraphEngine aiEngine = new AiGraphEngine();
-
-                    String rawText = tikaParser.parseFile(selectedFileFromTree.toPath());
-
+                    List<ConceptGraphPipeline.DocumentInput> documents = loader.load();
 
                     javafx.application.Platform.runLater(() -> {
-                        logArea.appendText("[1/3] Извлечение контента через Apache Tika выполнено.\n");
+                        logArea.appendText("[1/3] Извлечение контента через Apache Tika выполнено: "
+                                + documents.size() + " док.\n");
                         logArea.appendText("[2/3] Анализ ИИ Ollama и дедупликация понятий...\n");
                     });
 
-                    List<ConceptEntity> rawConcepts = nlpEngine.extractNouns(rawText);
+                    ConceptGraphPipeline pipeline = new ConceptGraphPipeline(
+                            new OpenNlpEngine(),
+                            new AiGraphEngine(),
+                            new AppExceptionHandler(),
+                            line -> javafx.application.Platform.runLater(() -> logArea.appendText("  " + line + "\n"))
+                    ).withMeaningSource(useWikipedia ? new WikipediaMeaningSource() : null);
 
-                    synchronized (currentResolvedConcepts) {
+                    // Весь анализ идёт в фоновом потоке, а списки для отрисовки меняем только в потоке JavaFX
+                    ConceptGraphPipeline.Result result = pipeline.processAll(documents);
+
+                    javafx.application.Platform.runLater(() -> {
                         currentResolvedConcepts.clear();
+                        currentResolvedConcepts.addAll(result.nodes());
                         currentEdges.clear();
+                        currentEdges.addAll(result.edges());
                         currentAngleOffset = 0.0;
                         graphTranslateX = 0.0; // Сбрасываем сдвиги камеры на старт
                         graphTranslateY = 0.0;
 
-                        // 1. Прогоняем омонимы и СРАЗУ сохраняем в БД для получения реальных ID
-                        for (ConceptEntity concept : rawConcepts) {
-                            ConceptEntity resolved = aiEngine.resolveOmonymAndType(concept, rawText);
-                            try {
-                                // Вызываем репозиторий Ромы для получения Long ID из Postgres
-                                Long dbId = ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveConcept(
-                                        resolved.value(), resolved.type()
-                                );
-                                // Сохраняем в UI-список объект с реальным ID базы
-                                currentResolvedConcepts.add(new ConceptEntity(
-                                        dbId, resolved.value(), resolved.type(), resolved.startChar(), resolved.endChar()
-                                ));
-                            } catch (Exception e) {
-                                System.err.println("[UI DB Error] Не удалось сохранить узел: " + resolved.value());
-                                // Фолбэк на случай падения базы, чтобы не сломать UI
-                                currentResolvedConcepts.add(resolved);
-                            }
-                        }
-
-                        // 2. Генерируем семантические связи без предикатов действий на основе ID из БД
-                        List<Edge> newEdges = aiEngine.buildSemanticConnections(currentResolvedConcepts, rawText);
-                        currentEdges.addAll(newEdges);
-
-                        // 3. Пакетно сохраняем рёбра графа в базу данных Ромы
-                        try {
-                            ru.conceptgraph.modules.infrastructure.repository.ConceptRepository.saveGraphEdges(newEdges);
-                        } catch (Exception e) {
-                            System.err.println("[UI DB Error] Не удалось сохранить рёбра в базу: " + e.getMessage());
-                        }
-                    }
-
-                    javafx.application.Platform.runLater(() -> {
                         logArea.appendText("[3/3] Генерация связей и рендеринг интерактивной 2D-карты...\n\n");
+                        clearCanvas(gc, graphCanvas);
                         redrawGraph(gc, graphCanvas);
+                        resultTabs.show(result);
 
+                        Map<Long, String> namesById = new HashMap<>();
                         for (ConceptEntity c : currentResolvedConcepts) {
+                            namesById.put(c.id(), c.value());
                             String icon = c.type() == ru.conceptgraph.shared.EntityType.PERSON ? "👤" :
                                     c.type() == ru.conceptgraph.shared.EntityType.GEOGRAPHY ? "🌍" :
                                             c.type() == ru.conceptgraph.shared.EntityType.TECHNOLOGY ? "💻" : "📦";
@@ -314,19 +327,9 @@ public class MainWindow extends Application {
                         }
 
                         logArea.appendText("\n🌐 СФОРМИРОВАННЫЕ СЕМАНТИЧЕСКИЕ СВЯЗИ (EDGES):\n");
-                        // Исправлен вывод логов: ищем текстовое имя ноды по её реальному ID из базы, а не по индексам
                         for (Edge edge : currentEdges) {
-                            String srcW = "Узел_" + edge.sourceConceptId();
-                            String trgW = "Узел_" + edge.targetConceptId();
-
-                            for (ConceptEntity c : currentResolvedConcepts) {
-                                if (c.id() != null && c.id().equals(edge.sourceConceptId())) {
-                                    srcW = c.value();
-                                }
-                                if (c.id() != null && c.id().equals(edge.targetConceptId())) {
-                                    trgW = c.value();
-                                }
-                            }
+                            String srcW = namesById.getOrDefault(edge.sourceConceptId(), "Узел_" + edge.sourceConceptId());
+                            String trgW = namesById.getOrDefault(edge.targetConceptId(), "Узел_" + edge.targetConceptId());
                             logArea.appendText(String.format("  • Связь: [%s] 🔗 [%s] | Вес: %.2f\n", srcW, trgW, edge.weight()));
                         }
                         logArea.appendText("\n=================================================================\n");
@@ -336,13 +339,54 @@ public class MainWindow extends Application {
 
                 } catch (Exception e) {
                     javafx.application.Platform.runLater(() -> logArea.appendText("[Ошибка]: " + e.getMessage() + "\n"));
+                } finally {
+                    javafx.application.Platform.runLater(() -> {
+                        runButton.setDisable(selectedFileFromTree == null);
+                        folderButton.setDisable(currentFolder == null);
+                    });
                 }
-            }).start();
+            });
+            worker.setDaemon(true); // не держим приложение открытым после закрытия окна
+            worker.start();
+        };
+
+        runButton.setOnAction(event -> {
+            if (selectedFileFromTree == null) return;
+            File file = selectedFileFromTree;
+            launcher.launch(file.getName(), () -> {
+                String rawText = new TikaParserEngine().parseFile(file.toPath());
+                return List.of(new ConceptGraphPipeline.DocumentInput(
+                        file.getName(), file.getAbsolutePath(), file.length(), rawText));
+            });
+        });
+
+        folderButton.setOnAction(event -> {
+            if (currentFolder == null) return;
+            File folder = currentFolder;
+            launcher.launch("папка " + folder.getName(), () -> {
+                List<ConceptGraphPipeline.DocumentInput> documents = new ArrayList<>();
+                for (Document doc : new FolderScanner(new TikaParserEngine()).scanAndParse(folder)) {
+                    documents.add(new ConceptGraphPipeline.DocumentInput(
+                            doc.name(), doc.path(), new File(doc.path()).length(), doc.rawText()));
+                }
+                return documents;
+            });
         });
 
         Scene scene = new Scene(mainLayout, 1200, 800);
         primaryStage.setScene(scene);
         primaryStage.show();
+    }
+
+    /** Загрузка документов для анализа (выполняется в фоновом потоке) */
+    @FunctionalInterface
+    private interface DocumentLoader {
+        List<ConceptGraphPipeline.DocumentInput> load() throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface AnalysisLauncher {
+        void launch(String title, DocumentLoader loader);
     }
 
     private void redrawGraph(GraphicsContext gc, Canvas canvas) {
@@ -369,15 +413,21 @@ public class MainWindow extends Application {
             coordsY[i] = centerY + radius * Math.sin(angle);
         }
 
+        // Рёбра ссылаются на ID из БД, а точки лежат по индексам списка: строим карту ID -> индекс
+        Map<Long, Integer> indexById = new HashMap<>();
+        for (int i = 0; i < nodeCount; i++) {
+            indexById.put(currentResolvedConcepts.get(i).id(), i);
+        }
+
         // 1. Отрисовка неоновых ребер и названий семантических связей
         gc.setLineWidth(1.8);
         for (Edge edge : currentEdges) {
             if (edge.weight() < minWeightThreshold) continue;
 
-            int srcIdx = edge.sourceConceptId().intValue() - 1;
-            int trgIdx = edge.targetConceptId().intValue() - 1;
+            Integer srcIdx = indexById.get(edge.sourceConceptId());
+            Integer trgIdx = indexById.get(edge.targetConceptId());
 
-            if (srcIdx >= 0 && srcIdx < nodeCount && trgIdx >= 0 && trgIdx < nodeCount) {
+            if (srcIdx != null && trgIdx != null) {
                 double x1 = coordsX[srcIdx];
                 double y1 = coordsY[srcIdx];
                 double x2 = coordsX[trgIdx];
@@ -461,11 +511,9 @@ public class MainWindow extends Application {
                 for (File child : files) {
                     if (child.isDirectory()) {
                         item.getChildren().add(createTreeNodes(child));
-                    } else {
-                        String name = child.getName().toLowerCase();
-                        if (name.endsWith(".txt") || name.endsWith(".pdf") || name.endsWith(".docx")) {
-                            item.getChildren().add(new TreeItem<>(child));
-                        }
+                    } else if (SupportedFormats.isSupported(child)) {
+                        // тот же список форматов, что и у сканера папок
+                        item.getChildren().add(new TreeItem<>(child));
                     }
                 }
             }
