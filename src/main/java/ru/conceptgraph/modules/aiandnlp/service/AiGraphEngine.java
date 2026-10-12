@@ -26,6 +26,24 @@ public class AiGraphEngine {
                 .build();
     }
 
+    /**
+     * Быстрая проверка, запущена ли Ollama (GET /api/tags, 2 секунды).
+     * Без неё каждый запрос к выключенной Ollama молча возвращает пустую строку,
+     * и конвейер зря делает десятки запросов.
+     */
+    public boolean isAvailable() {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:11434/api/tags"))
+                    .timeout(Duration.ofSeconds(2))
+                    .GET()
+                    .build();
+            return httpClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() == 200;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public ConceptEntity resolveOmonymAndType(
             ConceptEntity rawEntity,
             String sentence
