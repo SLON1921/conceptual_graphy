@@ -646,7 +646,6 @@ public class MainApplication extends Application {
                 });
                 ConceptGraphPipeline pipeline = new ConceptGraphPipeline(
                         new OpenNlpEngine(),
-                        new AiGraphEngine(),
                         new AppExceptionHandler(),
                         this::log
                 ).withMeaningSource(useWikipedia ? new WikipediaMeaningSource() : null);
@@ -824,8 +823,8 @@ public class MainApplication extends Application {
             boolean ollamaOk = ollama;
             Platform.runLater(() -> setStatus(ollamaDot, ollamaText, ollamaOk ? "ok" : "warn",
                     ollamaOk ? "Ollama на связи" : "Ollama не отвечает",
-                    ollamaOk ? "Типы и связи уточняет модель Ollama"
-                            : "Типы берутся из словарей, связи — по общим предложениям"));
+                    ollamaOk ? "Ollama запущена, но граф её сейчас не использует"
+                            : "Типы берутся из словарей, связи — по расстоянию в тексте"));
 
             boolean db = false;
             try (Connection ignored = ConnectionPool.getConnection()) {
