@@ -65,7 +65,9 @@ public class OpenNlpEngine {
                         int startChar = tokenSpans[i].getStart();
                         int endChar = tokenSpans[i].getEnd();
 
-                        // --- ИСПРАВЛЕНИЕ 1: Склеивание слов через дефис (Человек-паук) ---
+                        boolean sentenceStart = isSentenceStart(cleanedText, startChar);
+
+                        // Склеивание слов через дефис («дата-центр»)
                         if (i < tokens.length - 2 && "-".equals(tokens[i + 1])) {
                             String nextTag = tags[i + 2];
                             if ("NOUN".equalsIgnoreCase(nextTag) || "PROPN".equalsIgnoreCase(nextTag)) {
@@ -75,13 +77,19 @@ public class OpenNlpEngine {
                             }
                         }
 
-                        // --- ИСПРАВЛЕНИЕ 2: Приведение к базовой форме (Слияние падежей) ---
-                        String normalizedWord = normalizeRussianNoun(word);
+                        // Слово в начале предложения пишется с большой буквы по правилам,
+                        // поэтому обычное существительное там приводим к нижнему регистру
+                        String value = word;
+                        if (sentenceStart && "NOUN".equalsIgnoreCase(tag)
+                                && !RussianMorphology.isAbbreviation(word)) {
+                            value = word.toLowerCase();
+                        }
 
-                        // --- ИСПРАВЛЕНИЕ 3: Динамическое определение типа сущности ---
-                        EntityType type = determineEntityType(normalizedWord);
+                        // Падеж не трогаем: форму для узла выбирает конвейер по всем вхождениям,
+                        // а группирует их по RussianMorphology.stemKey
+                        EntityType type = determineEntityType(value, sentenceStart);
 
-                        ConceptEntity concept = new ConceptEntity(normalizedWord, type, startChar, endChar);
+                        ConceptEntity concept = new ConceptEntity(value, type, startChar, endChar);
 
                         // Добавляем в список
                         concepts.add(concept);
@@ -93,9 +101,8 @@ public class OpenNlpEngine {
             for (Span span : tokenSpans) {
                 String word = cleanedText.substring(span.getStart(), span.getEnd());
                 if (word.length() > 4 && Character.isLetter(word.charAt(0))) {
-                    String normalized = normalizeRussianNoun(word);
-                    EntityType type = determineEntityType(normalized);
-                    concepts.add(new ConceptEntity(normalized, type, span.getStart(), span.getEnd()));
+                    EntityType type = determineEntityType(word, false);
+                    concepts.add(new ConceptEntity(word, type, span.getStart(), span.getEnd()));
                 }
             }
         }
@@ -103,57 +110,83 @@ public class OpenNlpEngine {
         return concepts;
     }
 
+    /** Предел длины контекста для Ollama, чтобы не упираться в окно модели на длинных абзацах */
+    private static final int MAX_SENTENCE_LENGTH = 400;
+
     /**
-     * Эвристический метод для базовой нормализации окончаний русских существительных.
-     * Помогает объединить "фильме" -> "фильм", "монстров" -> "монстр".
+     * Возвращает предложение, в котором стоит слово с позициями [startChar, endChar).
+     * Границы предложения: точка, ! ? или перевод строки. Длинные куски обрезаются вокруг слова.
+     * Нужен, чтобы отправлять в Ollama контекст слова, а не весь документ.
      */
-    private String normalizeRussianNoun(String word) {
-        if (word == null || word.length() <= 3) {
-            return word;
+    public static String sentenceAround(String text, int startChar, int endChar) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        int start = Math.max(0, Math.min(startChar, text.length()));
+        int end = Math.max(start, Math.min(endChar, text.length()));
+
+        int from = sentenceStartOf(text, start);
+        int to = end;
+        while (to < text.length() && !isSentenceBoundary(text.charAt(to))) {
+            to++;
+        }
+        if (to < text.length()) {
+            to++; // захватываем сам знак конца предложения
         }
 
-        String lower = word.toLowerCase();
+        if (to - from > MAX_SENTENCE_LENGTH) {
+            int half = MAX_SENTENCE_LENGTH / 2;
+            from = Math.max(from, start - half);
+            to = Math.min(to, end + half);
+        }
+        return text.substring(from, to).replaceAll("\\s+", " ").trim();
+    }
 
-        // Точечные правила для часто встречающихся слов контекста
-        if (lower.endsWith("фильме") || lower.endsWith("фильма") || lower.endsWith("фильму")) {
-            return "фильм";
+    /** Позиция начала предложения, в котором стоит символ position */
+    public static int sentenceStartOf(String text, int position) {
+        int from = Math.max(0, Math.min(position, text.length()));
+        while (from > 0 && !isSentenceBoundary(text.charAt(from - 1))) {
+            from--;
         }
-        if (lower.endsWith("монстров") || lower.endsWith("монстрам") || lower.endsWith("монстры")) {
-            return "монстр";
-        }
-        if (lower.endsWith("друзья") || lower.endsWith("друзей")) {
-            return "друзья";
-        }
+        return from;
+    }
 
-        // Универсальные эвристические правила отсечения падежных окончаний
-        if (lower.endsWith("ами") || lower.endsWith("ями")) {
-            return word.substring(0, word.length() - 3);
-        }
-        if (lower.endsWith("ов") || lower.endsWith("ей") || lower.endsWith("ам") || lower.endsWith("ях") || lower.endsWith("ах")) {
-            return word.substring(0, word.length() - 2);
-        }
-        if (lower.endsWith("е") || lower.endsWith("а") || lower.endsWith("у") || lower.endsWith("ы") || lower.endsWith("и")) {
-            return word.substring(0, word.length() - 1);
-        }
+    private static boolean isSentenceBoundary(char c) {
+        return c == '.' || c == '!' || c == '?' || c == '\n' || c == '\r';
+    }
 
-        return word;
+    /** Первое слово текста, строки или слово после . ! ? (пробелы и кавычки перед словом пропускаем) */
+    private static boolean isSentenceStart(String text, int startChar) {
+        int i = startChar - 1;
+        while (i >= 0 && (text.charAt(i) == ' ' || text.charAt(i) == '\t'
+                || text.charAt(i) == '"' || text.charAt(i) == '«' || text.charAt(i) == '(')) {
+            i--;
+        }
+        if (i < 0) {
+            return true;
+        }
+        char c = text.charAt(i);
+        return c == '.' || c == '!' || c == '?' || c == '…' || c == '\n' || c == '\r' || c == ':';
     }
 
     /**
-     * Определяет тип сущности на основе её написания.
+     * Тип понятия без Ollama: словари из resources/dictionaries, потом правила по написанию.
+     * Людей по именам находит PersonExtractor, здесь PERSON только для слов-ролей («профессор», «автор»).
      */
-    private EntityType determineEntityType(String word) {
-        // Если слово начинается с заглавной буквы (например, Рома, Ваня) — это PERSON
-        if (Character.isUpperCase(word.charAt(0))) {
-            return EntityType.PERSON;
+    static EntityType determineEntityType(String word, boolean sentenceStart) {
+        EntityType fromDictionary = EntityDictionaries.lookup(word);
+        if (fromDictionary != null) {
+            return fromDictionary;
         }
-
-        String lower = word.toLowerCase();
-        if (lower.contains("человек-паук") || lower.contains("герой")) {
-            return EntityType.PERSON;
+        // Латиница в русском тексте — почти всегда технологии и продукты: Java, Python, TensorFlow, Git
+        if (RussianMorphology.isLatin(word)) {
+            return EntityType.TECHNOLOGY;
         }
-
-        // Во всех остальных случаях возвращаем стандартный тип
+        boolean capitalized = Character.isUpperCase(word.charAt(0));
+        if (capitalized && !sentenceStart && EntityDictionaries.looksLikeToponym(word)) {
+            return EntityType.GEOGRAPHY;
+        }
+        // Остальное (организации, предметы, понятия) — PRODUCT: другого типа в схеме БД пока нет
         return EntityType.PRODUCT;
     }
 

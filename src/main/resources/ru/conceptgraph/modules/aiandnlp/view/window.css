@@ -1,0 +1,456 @@
+/*
+ * Оформление окна «Понятийный граф». Тема «Графит».
+ * Все цвета окна и графа заданы здесь, в .root: чтобы сменить тему, достаточно поменять эти значения.
+ * Холст графа берёт цвета canvas-*, edge-*, type-* отсюда же (см. MainApplication.themeColor).
+ */
+.root {
+    /* основа */
+    cg-bg:           #0E1013;
+    cg-win:          #181B20;
+    cg-panel:        #1E2228;
+    cg-line:         #2C323B;
+    cg-text:         #E4E7EB;
+    cg-muted:        #9AA3AE;
+    cg-accent:       #7AA7D9;
+    cg-accent-soft:  #243142;
+
+    /* холст графа */
+    cg-canvas-bg:    #15181D;
+    cg-edge-color:   #5D6875;
+
+    /* типы понятий */
+    cg-type-person:     #FB923C;
+    cg-type-geography:  #2DD4BF;
+    cg-type-technology: #A78BFA;
+    cg-type-product:    #FACC15;
+
+    /* состояния */
+    cg-state-ok:   #4ADE80;
+    cg-state-warn: #FBBF24;
+    cg-state-bad:  #F87171;
+
+    /* стандартные цвета JavaFX выводим из палитры, чтобы все контролы стали тёмными */
+    -fx-base: cg-panel;
+    -fx-background: cg-win;
+    -fx-control-inner-background: cg-panel;
+    -fx-control-inner-background-alt: derive(cg-panel, 4%);
+    -fx-accent: cg-accent;
+    -fx-focus-color: cg-accent;
+    -fx-faint-focus-color: transparent;
+    -fx-selection-bar: cg-accent-soft;
+    -fx-selection-bar-non-focused: cg-accent-soft;
+    -fx-text-base-color: cg-text;
+    -fx-text-background-color: cg-text;
+    -fx-text-inner-color: cg-text;
+    -fx-mark-color: cg-text;
+    -fx-box-border: cg-line;
+    -fx-text-box-border: cg-line;
+    -fx-outer-border: cg-line;
+
+    -fx-font-family: "Segoe UI", "Inter", "Helvetica Neue", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: cg-win;
+}
+
+/* ---- шапка ---- */
+.top-bar {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 10 14 10 14;
+    -fx-spacing: 12;
+}
+.brand {
+    -fx-text-fill: cg-text;
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+}
+.path-field {
+    -fx-background-color: cg-win;
+    -fx-border-color: cg-line;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-text-fill: cg-muted;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+
+.text-field {
+    -fx-prompt-text-fill: cg-muted;
+}
+
+/* ---- кнопки ---- */
+.button {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-text-fill: cg-text;
+    -fx-padding: 6 12 6 12;
+    -fx-cursor: hand;
+}
+.button:hover {
+    -fx-background-color: derive(cg-panel, 12%);
+}
+.button.primary {
+    -fx-background-color: cg-accent;
+    -fx-border-color: cg-accent;
+    -fx-text-fill: cg-bg;
+    -fx-font-weight: bold;
+}
+.button.primary:hover {
+    -fx-background-color: derive(cg-accent, 12%);
+}
+.button:disabled {
+    -fx-opacity: 0.45;
+}
+
+/* ---- левая панель ---- */
+.side {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 1 0 0;
+}
+.section-label {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.side-actions {
+    -fx-border-color: cg-line;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 12 10 12;
+    -fx-spacing: 6;
+}
+.check-box {
+    -fx-text-fill: cg-muted;
+}
+.tree-view, .list-view, .table-view {
+    -fx-background-color: cg-panel;
+    -fx-border-color: transparent;
+}
+.tree-cell, .list-cell {
+    -fx-background-color: cg-panel;
+    -fx-text-fill: cg-text;
+    -fx-padding: 3 6 3 6;
+}
+.tree-cell:selected, .list-cell:selected {
+    -fx-background-color: cg-accent-soft;
+}
+.tree-cell.folder {
+    -fx-font-weight: bold;
+}
+.tree-cell.unsupported {
+    -fx-text-fill: cg-muted;
+    -fx-opacity: 0.6;
+}
+.ext-badge {
+    -fx-text-fill: cg-muted;
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 10px;
+    -fx-border-color: cg-line;
+    -fx-border-radius: 3;
+    -fx-padding: 0 3 0 3;
+}
+.ext-badge.unsupported {
+    -fx-text-fill: cg-state-bad;
+    -fx-border-color: cg-state-bad;
+}
+
+/* ---- панель фильтров над графом ---- */
+.graph-toolbar {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 8 12 8 12;
+    -fx-hgap: 14;
+    -fx-vgap: 8;
+}
+.type-chip {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-text-fill: cg-text;
+    -fx-padding: 4 10 4 10;
+    -fx-cursor: hand;
+}
+.type-chip:selected {
+    -fx-background-color: cg-panel;
+}
+.type-chip.off {
+    -fx-opacity: 0.4;
+}
+.search-field {
+    -fx-background-color: cg-win;
+    -fx-border-color: cg-line;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-pref-width: 160;
+}
+.toolbar-label {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 12px;
+}
+.toolbar-value {
+    -fx-text-fill: cg-text;
+    -fx-font-family: "Consolas", monospace;
+    -fx-min-width: 32;
+}
+
+/* ---- холст ---- */
+.canvas-pane {
+    -fx-background-color: cg-canvas-bg;
+}
+.canvas-hint {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 11px;
+}
+.zoom-button {
+    -fx-min-width: 30;
+    -fx-pref-width: 30;
+    -fx-padding: 4 0 4 0;
+    -fx-font-family: "Consolas", monospace;
+}
+
+/* ---- правая панель ---- */
+.right-pane {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 0 1;
+}
+.concept-card {
+    -fx-padding: 12 14 12 14;
+    -fx-spacing: 8;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 1 0;
+}
+.concept-title {
+    -fx-text-fill: cg-text;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+.type-badge {
+    -fx-background-radius: 999;
+    -fx-padding: 2 8 2 8;
+    -fx-text-fill: cg-bg;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.card-key {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 12px;
+}
+.card-value {
+    -fx-text-fill: cg-text;
+    -fx-font-size: 12px;
+}
+.card-empty {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 12px;
+}
+.link-row {
+    -fx-spacing: 6;
+}
+.hyperlink {
+    -fx-text-fill: cg-accent;
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+.link-weight {
+    -fx-text-fill: cg-muted;
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 11px;
+}
+.links-scroll, .links-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+/* ---- вкладки ---- */
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 1 0;
+}
+.tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-padding: 4 6 4 6;
+}
+.tab-pane .tab .tab-label {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 12px;
+}
+.tab-pane .tab:selected {
+    -fx-border-color: cg-accent;
+    -fx-border-width: 0 0 2 0;
+}
+.tab-pane .tab:selected .tab-label {
+    -fx-text-fill: cg-text;
+    -fx-font-weight: bold;
+}
+.tab-pane .tab:selected .focus-indicator {
+    -fx-border-color: transparent;
+}
+.table-view .column-header, .table-view .filler, .table-view .column-header-background {
+    -fx-background-color: cg-win;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 1 0;
+}
+.table-view .column-header .label {
+    -fx-text-fill: cg-muted;
+    -fx-font-weight: bold;
+    -fx-alignment: center-left;
+}
+.table-row-cell {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 0 0 1 0;
+}
+.table-row-cell:selected {
+    -fx-background-color: cg-accent-soft;
+}
+.table-cell {
+    -fx-text-fill: cg-text;
+    -fx-font-size: 12px;
+}
+.text-area, .text-area .content {
+    -fx-background-color: cg-panel;
+}
+.text-area {
+    -fx-text-fill: cg-muted;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+
+/* ---- строка статуса ---- */
+.status-bar {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 6 14 6 14;
+    -fx-spacing: 18;
+}
+.status-text {
+    -fx-text-fill: cg-muted;
+    -fx-font-size: 12px;
+}
+.status-dot {
+    -fx-fill: cg-muted;
+}
+.status-dot.ok   { -fx-fill: cg-state-ok; }
+.status-dot.warn { -fx-fill: cg-state-warn; }
+.status-dot.bad  { -fx-fill: cg-state-bad; }
+.progress-bar > .bar {
+    -fx-background-color: cg-accent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+}
+.progress-bar > .track {
+    -fx-background-color: cg-line;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+}
+
+/* ---- полосы прокрутки и разделители ---- */
+.scroll-bar {
+    -fx-background-color: transparent;
+}
+.scroll-bar .thumb {
+    -fx-background-color: cg-line;
+    -fx-background-radius: 4;
+}
+.scroll-bar .increment-button, .scroll-bar .decrement-button {
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+}
+.scroll-bar .increment-arrow, .scroll-bar .decrement-arrow {
+    -fx-shape: " ";
+    -fx-padding: 0;
+}
+.split-pane {
+    -fx-background-color: cg-win;
+    -fx-padding: 0;
+}
+.split-pane > .split-pane-divider {
+    -fx-background-color: cg-line;
+    -fx-padding: 0 1 0 0;
+}
+.slider .track {
+    -fx-background-color: cg-line;
+}
+.slider .thumb {
+    -fx-background-color: cg-accent;
+}
+.tooltip {
+    -fx-background-color: cg-panel;
+    -fx-text-fill: cg-text;
+    -fx-border-color: cg-line;
+}
+
+/* ---- меню ---- */
+.menu-bar {
+    -fx-background-color: cg-panel;
+    -fx-border-color: transparent transparent cg-line transparent;
+}
+.menu-bar .menu .label, .menu-item .label {
+    -fx-text-fill: cg-text;
+}
+.context-menu {
+    -fx-background-color: cg-panel;
+    -fx-border-color: cg-line;
+}
+.menu-item:focused {
+    -fx-background-color: cg-accent-soft;
+}
+
+/* ---- дашборд во вкладке «Статистика» ---- */
+.dashboard-scroll, .dashboard-scroll > .viewport, .dashboard {
+    -fx-background-color: cg-panel;
+}
+.stat-tile {
+    -fx-background-color: cg-win;
+    -fx-border-color: cg-line;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10 6 10;
+    -fx-min-width: 82;
+}
+.stat-value {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: cg-text;
+}
+.stat-key {
+    -fx-font-size: 11px;
+    -fx-text-fill: cg-muted;
+}
+.chart-title {
+    -fx-text-fill: cg-text;
+    -fx-font-size: 13px;
+}
+.chart-pie-label {
+    -fx-fill: cg-text;
+}
+.chart-pie-label-line {
+    -fx-stroke: cg-muted;
+}
+.chart-plot-background {
+    -fx-background-color: transparent;
+}
+.chart-vertical-grid-lines, .chart-horizontal-grid-lines {
+    -fx-stroke: cg-line;
+}
+.chart-alternative-row-fill, .chart-alternative-column-fill {
+    -fx-fill: transparent;
+}
+.axis {
+    -fx-tick-label-fill: cg-muted;
+    -fx-tick-label-font-size: 10px;
+}
+.axis-tick-mark, .axis-minor-tick-mark {
+    -fx-stroke: cg-line;
+}
+.chart-bar {
+    -fx-bar-fill: cg-accent;
+}
