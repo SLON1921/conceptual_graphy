@@ -952,11 +952,56 @@ public class MainApplication extends Application {
     }
 
     public static void main(String[] args) {
+        System.out.println("[SYSTEM] Запуск режима автоматического самотестирования (Self-test mode)...");
+        boolean testsPassed = runSelfTests();
+
+        if (!testsPassed) {
+            System.err.println("[CRITICAL ERROR] Автотесты не пройдены! Запуск графического интерфейса заблокирован.");
+            System.exit(1); // Аварийно выключаем программу, не открывая окно
+        }
+        System.out.println("[SYSTEM] Все автотесты из src/tests успешно пройдены.");
         // Кастомный перехватчик необработанных ошибок
         Thread.setDefaultUncaughtExceptionHandler(new AppExceptionHandler());
 
         // Регистрируем SystemPreloader: JavaFX покажет его до главного окна
         System.setProperty("javafx.preloader", "ru.conceptgraph.core.preloader.SystemPreloader");
         launch(args);
+    }
+
+    private static boolean runSelfTests(){
+        try {
+            org.junit.platform.launcher.LauncherDiscoveryRequest request =
+                    org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder.request()
+                            .selectors(org.junit.platform.engine.discovery.DiscoverySelectors.selectPackage("ru.conceptgraph"))
+                            .build();
+
+            org.junit.platform.launcher.Launcher launcher =
+                    org.junit.platform.launcher.core.LauncherFactory.create();
+
+            org.junit.platform.launcher.listeners.SummaryGeneratingListener listener =
+                    new org.junit.platform.launcher.listeners.SummaryGeneratingListener();
+
+            launcher.registerTestExecutionListeners(listener);
+
+            // Выполнение тестов
+            launcher.execute(request);
+
+            org.junit.platform.launcher.listeners.TestExecutionSummary summary = listener.getSummary();
+
+            // Логирование результатов в консоль разработчика
+            System.out.printf("[SELF-TEST] Всего тестов запущено: %d%n", summary.getTestsStartedCount());
+            System.out.printf("[SELF-TEST] Успешно: %d%n", summary.getTestsSucceededCount());
+            System.out.printf("[SELF-TEST] Сбоев: %d%n", summary.getTestsFailedCount());
+
+            if (summary.getTestsFailedCount() > 0) {
+                System.err.println("[SELF-TEST] Детализация ошибок выполнения тестов:");
+                summary.printFailuresTo(new java.io.PrintWriter(System.err));
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            System.err.println("[SELF-TEST ERROR] Не удалось инициализировать JUnit движок: " + e.getMessage());
+            return false;
+        }
     }
 }
