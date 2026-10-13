@@ -32,16 +32,8 @@ public class FolderScanner {
                     // рекурсия импорт во вложенную папку
                     documents.addAll(scanAndParse(item));
                 } else {
-                    // проверка разширения по тз
-                    String name = item.getName().toLowerCase();
-
-                    // игнорируем скрытые файлы и временные файлы документов
-                    if (item.isHidden() || name.startsWith("~$") || name.startsWith(".")) {
-                        continue;
-                    }
-
-                    if (name.endsWith(".pdf") || name.endsWith(".docx") ||
-                            name.endsWith(".html") || name.endsWith(".rtf") || name.endsWith(".txt")) {
+                    // проверка расширения по тз (общий список с деревом в окне)
+                    if (SupportedFormats.isSupported(item)) {
 
                         // вызываем метод интерфейса
                         String text = fileParser.extractText(item);
