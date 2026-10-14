@@ -40,6 +40,7 @@
             <version>2.9.2</version>
         </dependency>
 
+
         <!-- Логгер SLF4J (используется в AppExceptionHandler) -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -122,7 +123,21 @@
             <version>1.11.4</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.11.4</version>
+        </dependency>
+        <!-- ВСТАВЬТЕ ЭТУ СТРОКУ: она уберет ошибку с красным 'engine' -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-engine</artifactId>
+            <version>1.11.4</version>
+        </dependency>
+
+
     </dependencies>
+
 
     <build>
         <plugins>
