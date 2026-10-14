@@ -1,4 +1,4 @@
-package ru.conceptgraph.modules.aiandnlp.service;
+package ru.conceptgraph.core.errors;
 
 import ru.conceptgraph.modules.infrastructure.repository.ConnectionPool;
 
