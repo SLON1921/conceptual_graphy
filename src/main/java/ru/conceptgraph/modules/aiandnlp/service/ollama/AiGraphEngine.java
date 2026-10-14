@@ -42,6 +42,10 @@ public class AiGraphEngine {
     public String getOllamaUrl() {
         return ollamaUrl;
     }
+
+    public String getModelName() {
+        return modelName;
+    }
     /**
      * Читает application.properties напрямую: AppConfig хранит только настройки БД
      * и проверяет их как обязательные, а для Ollama достаточно значений по умолчанию.
