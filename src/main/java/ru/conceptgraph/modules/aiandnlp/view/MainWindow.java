@@ -7,6 +7,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
@@ -45,7 +46,9 @@ import javafx.stage.Window;
 
 import ru.conceptgraph.modules.aiandnlp.service.AnalysisService;
 import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
+import ru.conceptgraph.modules.aiandnlp.service.ollama.GraphComparison;
 import ru.conceptgraph.modules.aiandnlp.service.ollama.OllamaModels;
+import ru.conceptgraph.modules.aiandnlp.service.ollama.SemanticGraphEngine;
 import ru.conceptgraph.modules.aiandnlp.service.ServiceStatus;
 import ru.conceptgraph.modules.aiandnlp.service.SupportedFormats;
 import ru.conceptgraph.shared.ConceptEntity;
@@ -122,6 +125,17 @@ public class MainWindow {
 
     private Thread worker;
     private AnalysisService analysis;
+
+    /** Какой граф показан: по расстоянию (Ваня), по смыслу (Ollama) или оба вместе */
+    private static final String MODE_DISTANCE = "Граф: по расстоянию";
+    private static final String MODE_MEANING = "Граф: по смыслу";
+    private static final String MODE_COMBINED = "Граф: общий";
+    private ComboBox<String> graphModeBox;
+    private boolean updatingMode;               // переключаем сами — не реагировать
+    private List<Edge> meaningEdges;            // null — смысловой граф для этого анализа ещё не строили
+    private GraphComparison.Result comparison;
+    private List<Edge> shownEdges = List.of(); // рёбра, которые сейчас на экране (для карточки)
+    private SemanticGraphEngine semantic;
 
     public MainWindow(Stage stage) {
         this.stage = stage;
@@ -392,7 +406,15 @@ public class MainWindow {
         HBox weight = new HBox(6, weightLabel, weightSlider, weightValue);
         weight.setAlignment(Pos.CENTER_LEFT);
 
-        FlowPane toolbar = new FlowPane(chips, search, top, weight);
+        graphModeBox = new ComboBox<>();
+        graphModeBox.getItems().addAll(MODE_DISTANCE, MODE_MEANING, MODE_COMBINED);
+        graphModeBox.setValue(MODE_DISTANCE);
+        graphModeBox.setDisable(true);
+        graphModeBox.setTooltip(new Tooltip("По расстоянию — слова рядом в тексте (GraphBuilder); "
+                + "по смыслу — связи находит Ollama; общий — оба графа вместе"));
+        graphModeBox.setOnAction(e -> showGraphMode());
+
+        FlowPane toolbar = new FlowPane(chips, graphModeBox, search, top, weight);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.getStyleClass().add("graph-toolbar");
         return toolbar;
@@ -421,6 +443,9 @@ public class MainWindow {
         cancelButton.setOnAction(e -> {
             if (analysis != null) {
                 analysis.cancel();
+            }
+            if (semantic != null) {
+                semantic.cancel();
             }
             cancelButton.setDisable(true);
             progressText.setText("Отменяю…");
@@ -570,6 +595,7 @@ public class MainWindow {
         cancelItem.setDisable(!busy);
         savePngItem.setDisable(lastResult == null);
         exportCsvItem.setDisable(lastResult == null);
+        graphModeBox.setDisable(busy || lastResult == null);
     }
 
     private void runAnalysis(String title, List<File> files) {
@@ -649,6 +675,7 @@ public class MainWindow {
         Platform.runLater(() -> {
             worker = null;
             analysis = null;
+            semantic = null;
             progressBar.setProgress(progress);
             progressText.setText(status);
             cancelButton.setDisable(true);
@@ -658,6 +685,10 @@ public class MainWindow {
 
     private void showResult(ConceptGraphPipeline.Result result, GraphView.Layout layout) {
         lastResult = result;
+        meaningEdges = null; // новый анализ — смысловой граф строится заново
+        comparison = null;
+        shownEdges = result.edges();
+        setGraphMode(MODE_DISTANCE);
         conceptsById.clear();
         for (ConceptEntity c : result.nodes()) {
             conceptsById.put(c.id(), c);
@@ -679,6 +710,116 @@ public class MainWindow {
                 result.savedToDb() ? "БД: сохранено" : "БД недоступна",
                 result.savedToDb() ? "Результаты сохранены в PostgreSQL" : "Граф строится без сохранения, ID локальные");
         selectConcept(null);
+    }
+
+    // ---------------- граф по смыслу ----------------
+
+    private void setGraphMode(String mode) {
+        updatingMode = true;
+        graphModeBox.setValue(mode);
+        updatingMode = false;
+    }
+
+    /** Переключатель графов: смысловой строится при первом выборе, дальше берётся готовый */
+    private void showGraphMode() {
+        if (lastResult == null || updatingMode) {
+            return;
+        }
+        String mode = graphModeBox.getValue();
+        if (!MODE_DISTANCE.equals(mode) && meaningEdges == null) {
+            buildMeaningGraph(); // когда построится, сам вызовет showGraphMode
+            return;
+        }
+        List<Edge> edges = switch (mode) {
+            case MODE_MEANING -> meaningEdges;
+            case MODE_COMBINED -> comparison.combined();
+            default -> lastResult.edges();
+        };
+        // Раскладка зависит от рёбер: пересчитываем в фоне, чтобы окно не подвисало
+        ConceptGraphPipeline.Result result = lastResult;
+        Thread layouter = new Thread(() -> {
+            GraphView.Layout layout = GraphView.computeLayout(result.nodes(), result.frequency(), edges);
+            Platform.runLater(() -> {
+                if (result != lastResult) {
+                    return; // пока считали, запустили новый анализ
+                }
+                shownEdges = edges;
+                graphView.setResult(layout, result.frequency(), edges);
+                selectConcept(null);
+            });
+        }, "layout");
+        layouter.setDaemon(true);
+        layouter.start();
+    }
+
+    private void buildMeaningGraph() {
+        if (worker != null) {
+            return;
+        }
+        ConceptGraphPipeline.Result result = lastResult;
+        SemanticGraphEngine engine = new SemanticGraphEngine();
+        semantic = engine;
+        long started = System.currentTimeMillis();
+
+        logArea.appendText("\n— Смысловой граф: Ollama, модель " + engine.model() + " —\n");
+        progressBar.setProgress(0);
+        progressText.setText("Смысловой граф: запуск…");
+        cancelButton.setDisable(false);
+
+        SemanticGraphEngine.Progress progress = new SemanticGraphEngine.Progress() {
+            @Override
+            public void chunkDone(int done, int total) {
+                Platform.runLater(() -> {
+                    progressBar.setProgress(done / (double) total);
+                    progressText.setText("По смыслу: кусок " + done + " из " + total);
+                });
+            }
+
+            @Override
+            public void log(String line) {
+                MainWindow.this.log(line);
+            }
+        };
+
+        worker = new Thread(() -> {
+            try {
+                if (!ServiceStatus.isOllamaAvailable()) {
+                    log("[Смысл] Ollama не отвечает. Запустите её или откройте «Настройки → Модель Ollama».");
+                    Platform.runLater(() -> setGraphMode(MODE_DISTANCE));
+                    finish("Ollama не отвечает", 0);
+                    return;
+                }
+                List<Edge> edges = engine.build(result, progress);
+                if (edges == null) {
+                    Platform.runLater(() -> setGraphMode(MODE_DISTANCE));
+                    finish("Смысловой граф отменён", 0);
+                    return;
+                }
+                GraphComparison.Result cmp = GraphComparison.combine(result.edges(), edges);
+                log(String.format(Locale.forLanguageTag("ru"),
+                        "[Смысл] связей по смыслу: %d, по расстоянию: %d. В обоих графах: %d "
+                                + "(%.0f%% смысловых связей есть и у графа по расстоянию). Сходство графов: %.0f%%.",
+                        edges.size(), result.edges().size(), cmp.both(),
+                        cmp.meaningAlsoInDistancePercent(), cmp.similarityPercent()));
+                double seconds = (System.currentTimeMillis() - started) / 1000.0;
+                Platform.runLater(() -> {
+                    if (result == lastResult) {
+                        meaningEdges = edges;
+                        comparison = cmp;
+                        showGraphMode();
+                    }
+                });
+                finish(String.format(Locale.forLanguageTag("ru"), "Смысловой граф · %d связей за %.0f с",
+                        edges.size(), seconds), 1);
+            } catch (Throwable e) {
+                log("[Смысл][Ошибка]: " + e.getMessage());
+                Platform.runLater(() -> setGraphMode(MODE_DISTANCE));
+                finish("Ошибка: " + e.getMessage(), 0);
+            }
+        }, "semantic-graph");
+        worker.setDaemon(true);
+        updateButtons();
+        worker.start();
     }
 
     // ---------------- выбор понятия ----------------
@@ -714,7 +855,7 @@ public class MainWindow {
 
         // все связи понятия, сильные сверху
         List<Edge> links = new ArrayList<>();
-        for (Edge e : lastResult.edges()) {
+        for (Edge e : shownEdges) {
             if (concept.id().equals(e.sourceConceptId()) || concept.id().equals(e.targetConceptId())) {
                 links.add(e);
             }
