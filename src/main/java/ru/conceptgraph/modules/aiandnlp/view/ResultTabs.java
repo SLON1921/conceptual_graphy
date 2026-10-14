@@ -27,7 +27,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import ru.conceptgraph.modules.aiandnlp.service.ConceptGraphPipeline;
-import ru.conceptgraph.modules.aiandnlp.service.FailureLogReader;
+import ru.conceptgraph.core.errors.FailureLogReader;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.EntityType;
 
