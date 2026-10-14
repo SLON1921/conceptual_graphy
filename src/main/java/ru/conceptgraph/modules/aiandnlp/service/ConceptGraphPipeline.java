@@ -50,6 +50,8 @@ public class ConceptGraphPipeline {
      * @param errors      ошибки этого запуска (БД, Википедия, построение рёбер)
      * @param stageMillis время по этапам, мс
      * @param savedToDb   true — ID из PostgreSQL; false — база недоступна, ID локальные (1..n)
+     * @param inputs      сами документы с текстом (нужны смысловому графу)
+     * @param mentions    все вхождения понятий: где именно в тексте стоит каждое
      */
     public record Result(List<ConceptEntity> nodes,
                          Map<Long, Integer> frequency,
@@ -58,7 +60,13 @@ public class ConceptGraphPipeline {
                          List<DateFound> dates,
                          List<String> errors,
                          Map<String, Long> stageMillis,
-                         boolean savedToDb) {
+                         boolean savedToDb,
+                         List<DocumentInput> inputs,
+                         List<NodeMention> mentions) {
+    }
+
+    /** Вхождение узла в документ: номер документа в inputs и позиция первого символа */
+    public record NodeMention(long nodeId, int doc, int start) {
     }
 
     /** Одно вхождение понятия в документ */
@@ -205,7 +213,15 @@ public class ConceptGraphPipeline {
         }
         stageMillis.put("Рёбра графа", System.currentTimeMillis() - t);
 
-        return new Result(nodes, frequency, edges, reports, dates, errors, stageMillis, savedToDb);
+        List<NodeMention> mentions = new ArrayList<>();
+        for (Group group : groups.values()) {
+            for (Mention mention : group.mentions) {
+                mentions.add(new NodeMention(group.node.id(), mention.doc(), mention.start()));
+            }
+        }
+
+        return new Result(nodes, frequency, edges, reports, dates, errors, stageMillis, savedToDb,
+                List.copyOf(documents), mentions);
     }
 
     // ---------------------------------------------------------------- омонимы
