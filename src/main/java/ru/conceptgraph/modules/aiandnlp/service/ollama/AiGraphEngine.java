@@ -1,4 +1,4 @@
-package ru.conceptgraph.modules.aiandnlp.service;
+package ru.conceptgraph.modules.aiandnlp.service.ollama;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -23,7 +23,7 @@ public class AiGraphEngine {
 
     private final HttpClient httpClient;
 
-    /** Адрес Ollama и модель берутся из application.properties (ollama.url, ollama.model) */
+    /**Он запускает весь анализ по шагам и отдаёт окну готовый результат. */
     private final String ollamaUrl;
     private final String modelName;
 
@@ -35,9 +35,17 @@ public class AiGraphEngine {
         Properties settings = loadSettings();
         String url = settings.getProperty("ollama.url", "http://localhost:11434").trim();
         this.ollamaUrl = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
-        this.modelName = settings.getProperty("ollama.model", "llama3").trim();
+        String saved = OllamaModels.savedModel();
+        this.modelName = saved != null ? saved : settings.getProperty("ollama.model", "llama3").trim();
     }
 
+    public String getOllamaUrl() {
+        return ollamaUrl;
+    }
+
+    public String getModelName() {
+        return modelName;
+    }
     /**
      * Читает application.properties напрямую: AppConfig хранит только настройки БД
      * и проверяет их как обязательные, а для Ollama достаточно значений по умолчанию.
