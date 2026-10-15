@@ -40,24 +40,17 @@ public class ConnectionPool {
 
     // Статический блок инициализации пула соединений
     static {
-        try (InputStream input = ConnectionPool.class.getClassLoader()
-                .getResourceAsStream("application.properties")) {
-            if (input == null) {
-                throw new RuntimeException("Не существует файла application.properties");
-            }
-            Properties properties = new Properties();
-            properties.load(input);
-
+        try {
             HikariConfig config = new HikariConfig();
 
             // Основные параметры авторизации в БД
-            config.setJdbcUrl(properties.getProperty("db.url"));
-            config.setUsername(properties.getProperty("db.username"));
-            config.setPassword(properties.getProperty("db.password"));
+            config.setJdbcUrl(getDbUrl());
+            config.setUsername(getDbUsername());
+            config.setPassword(getDbPassword());
+
 
             // Настройка размеров пула
-            int maxPoolSize = Integer.parseInt(properties.getProperty("db.pool.max-size", "10"));
-            config.setMaximumPoolSize(maxPoolSize);
+            config.setMaximumPoolSize(getMaxPoolSize());
             config.setMinimumIdle(2);
 
             // Настройка таймаутов (в миллисекундах)
@@ -80,9 +73,6 @@ public class ConnectionPool {
                     .load();
             flyway.migrate();
             System.out.println("[Flyway] Миграции успешно применены. База данных актуальна.");
-
-        } catch (IOException e) {
-            throw new ExceptionInInitializerError("Не удалось прочесть файл свойств БД: " + e.getMessage());
         } catch (Exception e) {
             throw new ExceptionInInitializerError("Ошибка инициализации пула HikariCP: " + e.getMessage());
         }

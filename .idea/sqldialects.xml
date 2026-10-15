@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="SqlDialectMappings">
-    <file url="PROJECT" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/java/ru/conceptgraph/core/errors/AppExceptionHandler.java" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/java/ru/conceptgraph/core/preloader/SystemPreloader.java" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/java/ru/conceptgraph/modules/infrastructure/repository/ConceptRepository.java" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V1__Create_schema.sql" dialect="PostgreSQL" />
   </component>
 </project>
