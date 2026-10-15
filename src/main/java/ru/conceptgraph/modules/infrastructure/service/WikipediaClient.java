@@ -110,7 +110,7 @@ public class WikipediaClient {
             String pageId = pagesNode.fieldNames().next();
             JsonNode pageData = pagesNode.get(pageId);
 
-            // Если вы искали абракадабру, Википедия вернет ответ, но запишет в ID маркер "-1".
+            // Если я искал абракадабру, Википедия вернет ответ, но запишет в ID маркер "-1".
             if ("-1".equals(pageId)) {
                 throw new RuntimeException("Статья в Википедии не существует для понятия: " + originalConcept);
             }

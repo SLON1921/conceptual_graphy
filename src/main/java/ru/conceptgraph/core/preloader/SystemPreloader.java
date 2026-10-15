@@ -145,7 +145,7 @@ public class SystemPreloader extends Preloader {
         config.setPassword(props.getProperty("db.password"));
 
         // Жесткие лимиты тайм-аута, чтобы прелоадер не завис навечно при "лежащей" базе
-        config.setConnectionTimeout(15000); // 4 секунды на ожидание
+        config.setConnectionTimeout(15000); // 15 секунды на ожидание
         config.setValidationTimeout(2000);
         config.setMaximumPoolSize(2);      // Минимальный тестовый размер
 
