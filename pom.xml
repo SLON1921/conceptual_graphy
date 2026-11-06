@@ -40,6 +40,7 @@
             <version>2.9.2</version>
         </dependency>
 
+
         <!-- Логгер SLF4J (используется в AppExceptionHandler) -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -105,7 +106,49 @@
             <version>21.0.2</version>
         </dependency>
 
+        <!-- JUnit 5 для тестов Вани (src/test/java) -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.11.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-engine</artifactId>
+            <version>1.11.4</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.11.4</version>
+        </dependency>
+        <!-- ВСТАВЬТЕ ЭТУ СТРОКУ: она уберет ошибку с красным 'engine' -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-engine</artifactId>
+            <version>1.11.4</version>
+        </dependency>
+
+
     </dependencies>
+
+
+    <build>
+        <plugins>
+            <!-- Новый surefire нужен, чтобы mvn test запускал тесты JUnit 5 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
 
     <properties>
         <maven.compiler.source>26</maven.compiler.source>

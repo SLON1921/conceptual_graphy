@@ -1,6 +1,7 @@
 package ru.conceptgraph.modules.aiandnlp.service;
 
 import ru.conceptgraph.core.errors.AppExceptionHandler;
+import ru.conceptgraph.modules.analytics.service.GraphBuilder;
 import ru.conceptgraph.modules.infrastructure.repository.ConceptRepository;
 import ru.conceptgraph.shared.ConceptEntity;
 import ru.conceptgraph.shared.Edge;
@@ -9,7 +10,6 @@ import ru.conceptgraph.shared.EntityType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,7 +17,9 @@ import java.util.function.Consumer;
 
 /**
  * Общий конвейер анализа документов для консольной версии и окна:
- * люди, даты и существительные -> омонимы (Википедия) -> тип (словари, Ollama) -> БД -> рёбра графа.
+ * люди, даты и существительные -> омонимы (Википедия) -> тип (словари) -> БД -> рёбра графа.
+ *
+ * <p>Рёбра строит {@link GraphBuilder} Вани (модуль analytics) по расстоянию между словами в тексте.</p>
  *
  * <p>Понятия склеиваются по всем документам сразу: одно слово в разных падежах и в разных
  * файлах — один узел графа.</p>
@@ -45,9 +47,11 @@ public class ConceptGraphPipeline {
      * @param edges       рёбра графа между ID узлов
      * @param documents   отчёт по каждому документу
      * @param dates       все найденные даты
-     * @param errors      ошибки этого запуска (Ollama, БД, Википедия)
+     * @param errors      ошибки этого запуска (БД, Википедия, построение рёбер)
      * @param stageMillis время по этапам, мс
      * @param savedToDb   true — ID из PostgreSQL; false — база недоступна, ID локальные (1..n)
+     * @param inputs      сами документы с текстом (нужны смысловому графу)
+     * @param mentions    все вхождения понятий: где именно в тексте стоит каждое
      */
     public record Result(List<ConceptEntity> nodes,
                          Map<Long, Integer> frequency,
@@ -56,7 +60,13 @@ public class ConceptGraphPipeline {
                          List<DateFound> dates,
                          List<String> errors,
                          Map<String, Long> stageMillis,
-                         boolean savedToDb) {
+                         boolean savedToDb,
+                         List<DocumentInput> inputs,
+                         List<NodeMention> mentions) {
+    }
+
+    /** Вхождение узла в документ: номер документа в inputs и позиция первого символа */
+    public record NodeMention(long nodeId, int doc, int start) {
     }
 
     /** Одно вхождение понятия в документ */
@@ -72,8 +82,11 @@ public class ConceptGraphPipeline {
         ConceptEntity node;      // итоговый узел
     }
 
+    /** Связь создаётся, если понятия стоят не дальше этого числа слов друг от друга */
+    private static final int EDGE_WORD_THRESHOLD = 10;
+
     private final OpenNlpEngine nlpEngine;
-    private final AiGraphEngine aiEngine;
+    private final GraphBuilder graphBuilder = new GraphBuilder();
     private final AppExceptionHandler exceptionHandler;
     private final Consumer<String> log;
     private final PersonExtractor personExtractor = new PersonExtractor();
@@ -84,11 +97,9 @@ public class ConceptGraphPipeline {
     private List<String> errors;
 
     public ConceptGraphPipeline(OpenNlpEngine nlpEngine,
-                                AiGraphEngine aiEngine,
                                 AppExceptionHandler exceptionHandler,
                                 Consumer<String> log) {
         this.nlpEngine = nlpEngine;
-        this.aiEngine = aiEngine;
         this.exceptionHandler = exceptionHandler;
         this.log = log;
     }
@@ -156,16 +167,12 @@ public class ConceptGraphPipeline {
         }
         log.accept("Уникальных понятий: " + groups.size());
 
-        // 3. Значение и тип каждого узла; Ollama уточняет тип, если запущена
+        // 3. Значение и тип каждого узла (словари, люди, омонимы)
         t = System.currentTimeMillis();
-        boolean ollama = aiEngine.isAvailable();
-        if (!ollama) {
-            log.accept("[Ollama]: не запущена, тип берётся из словарей, рёбра — по общим предложениям.");
-        }
         for (Group group : groups.values()) {
-            group.node = buildNode(group, documents, ollama);
+            group.node = buildNode(group);
         }
-        stageMillis.put(ollama ? "Тип понятий (Ollama)" : "Тип понятий (словари)", System.currentTimeMillis() - t);
+        stageMillis.put("Тип понятий (словари)", System.currentTimeMillis() - t);
 
         // 4. Сохранение в БД; без базы — локальные ID
         t = System.currentTimeMillis();
@@ -194,15 +201,9 @@ public class ConceptGraphPipeline {
         }
         List<ConceptEntity> nodes = new ArrayList<>(nodesById.values());
 
-        // 5. Рёбра: Ollama, а если она не дала ни одного — по совместным предложениям
+        // 5. Рёбра: GraphBuilder Вани по расстоянию между словами
         t = System.currentTimeMillis();
-        List<Edge> edges = new ArrayList<>();
-        if (ollama) {
-            edges = buildAiEdges(groups, documents);
-        }
-        if (edges.isEmpty()) {
-            edges = buildCooccurrenceEdges(groups, documents);
-        }
+        List<Edge> edges = buildEdges(groups, documents);
         if (savedToDb && !edges.isEmpty()) {
             try {
                 ConceptRepository.saveGraphEdges(edges);
@@ -212,7 +213,15 @@ public class ConceptGraphPipeline {
         }
         stageMillis.put("Рёбра графа", System.currentTimeMillis() - t);
 
-        return new Result(nodes, frequency, edges, reports, dates, errors, stageMillis, savedToDb);
+        List<NodeMention> mentions = new ArrayList<>();
+        for (Group group : groups.values()) {
+            for (Mention mention : group.mentions) {
+                mentions.add(new NodeMention(group.node.id(), mention.doc(), mention.start()));
+            }
+        }
+
+        return new Result(nodes, frequency, edges, reports, dates, errors, stageMillis, savedToDb,
+                List.copyOf(documents), mentions);
     }
 
     // ---------------------------------------------------------------- омонимы
@@ -289,25 +298,11 @@ public class ConceptGraphPipeline {
 
     // ---------------------------------------------------------------- узлы
 
-    private ConceptEntity buildNode(Group group, List<DocumentInput> documents, boolean ollama) {
+    private ConceptEntity buildNode(Group group) {
         Mention first = group.mentions.get(0);
         String value = group.fixedValue != null ? group.fixedValue : mostFrequentSurface(group);
         EntityType type = group.fixedType != null ? group.fixedType : bestType(group);
-        ConceptEntity node = new ConceptEntity(value, type, first.start(), first.end());
-
-        // Людей и омонимы с уточнённым типом Ollama не переспрашиваем
-        if (ollama && group.fixedType == null) {
-            String sentence = OpenNlpEngine.sentenceAround(documents.get(first.doc()).text(), first.start(), first.end());
-            try {
-                ConceptEntity resolved = aiEngine.resolveOmonymAndType(node, sentence);
-                if (resolved != null) {
-                    node = resolved;
-                }
-            } catch (Exception e) {
-                reportFailure(value, e);
-            }
-        }
-        return node;
+        return new ConceptEntity(value, type, first.start(), first.end());
     }
 
     /** Форма слова для узла — та, что чаще всего встречается в тексте (при равенстве — первая) */
@@ -339,71 +334,44 @@ public class ConceptGraphPipeline {
 
     // ---------------------------------------------------------------- рёбра
 
-    private List<Edge> buildAiEdges(Map<String, Group> groups, List<DocumentInput> documents) {
-        Map<String, Edge> merged = new LinkedHashMap<>();
+    /**
+     * Рёбра по каждому документу считает GraphBuilder (вес тем больше, чем ближе слова),
+     * веса из разных документов складываются, потом делятся на максимум,
+     * чтобы попасть в 0..1, как ждёт ползунок «Вес связи от» в окне.
+     */
+    private List<Edge> buildEdges(Map<String, Group> groups, List<DocumentInput> documents) {
+        Map<String, double[]> weights = new LinkedHashMap<>();
         for (int d = 0; d < documents.size(); d++) {
-            List<ConceptEntity> docNodes = new ArrayList<>();
+            List<GraphBuilder.OccurrenceInfo> occurrences = new ArrayList<>();
             for (Group group : groups.values()) {
-                final int doc = d;
-                if (group.mentions.stream().anyMatch(m -> m.doc() == doc)) {
-                    docNodes.add(group.node);
+                for (Mention mention : group.mentions) {
+                    if (mention.doc() == d) {
+                        occurrences.add(new GraphBuilder.OccurrenceInfo(group.node.id(), mention.start()));
+                    }
                 }
             }
             try {
-                for (Edge edge : aiEngine.buildSemanticConnections(docNodes, documents.get(d).text())) {
-                    mergeEdge(merged, edge.sourceConceptId(), edge.targetConceptId(), edge.weight());
+                // Предметный указатель пока не выделяется, поэтому без усиления (пустой набор, коэффициент 1)
+                for (Edge edge : graphBuilder.buildGraph((long) d, occurrences, EDGE_WORD_THRESHOLD, Set.of(), 1.0)) {
+                    long a = Math.min(edge.sourceConceptId(), edge.targetConceptId());
+                    long b = Math.max(edge.sourceConceptId(), edge.targetConceptId());
+                    weights.computeIfAbsent(a + "-" + b, k -> new double[1])[0] += edge.weight();
                 }
             } catch (Exception e) {
                 reportFailure("EDGES_" + documents.get(d).name(), e);
             }
         }
-        return new ArrayList<>(merged.values());
-    }
 
-    /**
-     * Запасные рёбра без ИИ: два понятия связаны, если стоят в одном предложении.
-     * Вес растёт с числом таких предложений: 1 раз — 0.3, 2 — 0.5, 3 — 0.7 … максимум 1.0.
-     */
-    private List<Edge> buildCooccurrenceEdges(Map<String, Group> groups, List<DocumentInput> documents) {
-        // (документ, начало предложения) -> узлы в этом предложении
-        Map<String, Set<Long>> sentences = new LinkedHashMap<>();
-        for (Group group : groups.values()) {
-            for (Mention mention : group.mentions) {
-                String text = documents.get(mention.doc()).text();
-                String sentenceKey = mention.doc() + ":" + OpenNlpEngine.sentenceStartOf(text, mention.start());
-                sentences.computeIfAbsent(sentenceKey, k -> new LinkedHashSet<>()).add(group.node.id());
-            }
+        double max = 0;
+        for (double[] w : weights.values()) {
+            max = Math.max(max, w[0]);
         }
-
-        Map<String, Integer> pairCounts = new LinkedHashMap<>();
-        for (Set<Long> ids : sentences.values()) {
-            List<Long> list = new ArrayList<>(ids);
-            for (int i = 0; i < list.size(); i++) {
-                for (int j = i + 1; j < list.size(); j++) {
-                    long a = Math.min(list.get(i), list.get(j));
-                    long b = Math.max(list.get(i), list.get(j));
-                    pairCounts.merge(a + "-" + b, 1, Integer::sum);
-                }
-            }
-        }
-
         List<Edge> edges = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : pairCounts.entrySet()) {
+        for (Map.Entry<String, double[]> entry : weights.entrySet()) {
             String[] ids = entry.getKey().split("-");
-            double weight = Math.min(1.0, 0.3 + 0.2 * (entry.getValue() - 1));
-            edges.add(new Edge(Long.parseLong(ids[0]), Long.parseLong(ids[1]), weight, "связан"));
+            edges.add(new Edge(Long.parseLong(ids[0]), Long.parseLong(ids[1]), entry.getValue()[0] / max, "связан"));
         }
         return edges;
-    }
-
-    private static void mergeEdge(Map<String, Edge> merged, Long a, Long b, double weight) {
-        long min = Math.min(a, b);
-        long max = Math.max(a, b);
-        String key = min + "-" + max;
-        Edge existing = merged.get(key);
-        if (existing == null || existing.weight() < weight) {
-            merged.put(key, new Edge(min, max, weight, "связан"));
-        }
     }
 
     // ---------------------------------------------------------------- БД
