@@ -39,8 +39,7 @@ public class OpenNlpEngine {
             return concepts;
         }
 
-        // Отсекаем список литературы и предметный указатель
-        String cleanedText = cutOffUnwantedSections(rawText);
+        String cleanedText = rawText;
 
         // Используем встроенный токенизатор НЛП для разбиения текста на слова
         SimpleTokenizer tokenizer = SimpleTokenizer.INSTANCE;
@@ -188,28 +187,5 @@ public class OpenNlpEngine {
         }
         // Остальное (организации, предметы, понятия) — PRODUCT: другого типа в схеме БД пока нет
         return EntityType.PRODUCT;
-    }
-
-    /**
-     * Логика отсечения лишних разделов.
-     */
-    private String cutOffUnwantedSections(String text) {
-        String lower = text.toLowerCase();
-        int litIndex = lower.indexOf("список литературы");
-        int indexIndex = lower.indexOf("предметный указатель");
-
-        int cutIndex = -1;
-        if (litIndex != -1 && indexIndex != -1) {
-            cutIndex = Math.min(litIndex, indexIndex);
-        } else if (litIndex != -1) {
-            cutIndex = litIndex;
-        } else if (indexIndex != -1) {
-            cutIndex = indexIndex;
-        }
-
-        if (cutIndex != -1) {
-            return text.substring(0, cutIndex);
-        }
-        return text;
     }
 }
