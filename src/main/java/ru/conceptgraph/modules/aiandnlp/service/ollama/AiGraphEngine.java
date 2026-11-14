@@ -444,6 +444,7 @@ public class AiGraphEngine {
 
         String word = searchedWord
                 .trim()
+
                 .toLowerCase();
 
 
